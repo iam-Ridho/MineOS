@@ -1,6 +1,0 @@
-{
-  "/agents/page": "app/agents/page.js",
-  "/digital-twin/page": "app/digital-twin/page.js",
-  "/dashboard/page": "app/dashboard/page.js",
-  "/analytics/page": "app/analytics/page.js"
-}
