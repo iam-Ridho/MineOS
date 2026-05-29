@@ -1,7 +1,13 @@
 "use client";
+// ─── Navbar.tsx ───────────────────────────────────────────────────────────────
+// Simpan file ini ke: src/components/layout/Navbar.tsx
+// Update dari versi lama: tombol Logout sekarang berfungsi
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { Bell, Wifi, WifiOff, X, User, Settings, LogOut, Moon, Sun, Globe } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { logout, getSession, ROLE_LABEL, ROLE_COLOR } from "@/lib/auth/mock-auth";
 
 const notifications = [
   { id: 1, type: "error",   title: "Drill Unit Gamma — ERROR",    desc: "Baterai kritis 23%, segera cek.",           time: "2 mnt lalu" },
@@ -16,32 +22,32 @@ const typeStyle = {
 };
 
 export default function Navbar({ title }: { title: string }) {
-  const [time, setTime] = useState("");
-  const [online, setOnline] = useState(true);
-  const [openNotif, setOpenNotif] = useState(false);
+  const router = useRouter();
+
+  const [time, setTime]             = useState("");
+  const [online, setOnline]         = useState(true);
+  const [openNotif, setOpenNotif]   = useState(false);
   const [openProfile, setOpenProfile] = useState(false);
-  const [dismissed, setDismissed] = useState<number[]>([]);
-  const [mode, setMode] = useState<"menu" | "edit" | "settings">("menu");
+  const [dismissed, setDismissed]   = useState<number[]>([]);
+  const [mode, setMode]             = useState<"menu" | "edit" | "settings">("menu");
 
-  // Profil
-  const [name, setName] = useState("Gilang");
-  const [email, setEmail] = useState("gilang@mineos.id");
-  const [tempName, setTempName] = useState(name);
+  // Session user data
+  const session = getSession();
+  const [name,  setName]  = useState(session?.user.name  ?? "User");
+  const [email, setEmail] = useState(session?.user.email ?? "");
+  const [tempName,  setTempName]  = useState(name);
   const [tempEmail, setTempEmail] = useState(email);
+  const role = session?.user.role ?? "operator";
 
-  // Pengaturan
-  const [darkMode, setDarkMode] = useState(true);
-  const [language, setLanguage] = useState("id");
-  const [notifSound, setNotifSound] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // Settings
+  const [darkMode,     setDarkMode]     = useState(true);
+  const [language,     setLanguage]     = useState("id");
+  const [notifSound,   setNotifSound]   = useState(true);
+  const [autoRefresh,  setAutoRefresh]  = useState(true);
 
   useEffect(() => {
     const tick = () =>
-      setTime(
-        new Date().toLocaleTimeString("id-ID", {
-          hour: "2-digit", minute: "2-digit", second: "2-digit",
-        })
-      );
+      setTime(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     tick();
     const id = setInterval(tick, 1000);
     setOnline(navigator.onLine);
@@ -54,6 +60,12 @@ export default function Navbar({ title }: { title: string }) {
     setName(tempName);
     setEmail(tempEmail);
     setMode("menu");
+  };
+
+  // ── Logout ──────────────────────────────────────────────────────────────────
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
   };
 
   const Toggle = ({ value, onChange }: { value: boolean; onChange: () => void }) => (
@@ -70,13 +82,12 @@ export default function Navbar({ title }: { title: string }) {
       <h1 className="text-white font-semibold text-sm tracking-wide">{title}</h1>
 
       <div className="flex items-center gap-4">
-        {/* Status koneksi */}
+        {/* Koneksi */}
         <div className="flex items-center gap-1.5 text-xs font-mono">
-          {online ? (
-            <><Wifi size={13} className="text-emerald-400" /><span className="text-emerald-400">ONLINE</span></>
-          ) : (
-            <><WifiOff size={13} className="text-red-400" /><span className="text-red-400">OFFLINE</span></>
-          )}
+          {online
+            ? <><Wifi size={13} className="text-emerald-400" /><span className="text-emerald-400">ONLINE</span></>
+            : <><WifiOff size={13} className="text-red-400" /><span className="text-red-400">OFFLINE</span></>
+          }
         </div>
 
         {/* Jam */}
@@ -142,7 +153,7 @@ export default function Navbar({ title }: { title: string }) {
           {openProfile && (
             <div className="absolute right-0 top-9 w-72 bg-[#111827] border border-[#1f2937] rounded-xl shadow-xl overflow-hidden">
 
-              {/* === MENU UTAMA === */}
+              {/* MENU UTAMA */}
               {mode === "menu" && (
                 <>
                   <div className="px-4 py-4 border-b border-[#1f2937] flex items-center gap-3">
@@ -152,6 +163,10 @@ export default function Navbar({ title }: { title: string }) {
                     <div>
                       <p className="text-white text-sm font-semibold">{name}</p>
                       <p className="text-gray-500 text-xs">{email}</p>
+                      {/* Role badge */}
+                      <span className={`mt-1 inline-block text-[10px] font-mono px-2 py-0.5 rounded border ${ROLE_COLOR[role]}`}>
+                        {ROLE_LABEL[role]}
+                      </span>
                     </div>
                   </div>
                   <div className="py-1">
@@ -159,126 +174,93 @@ export default function Navbar({ title }: { title: string }) {
                       onClick={() => { setTempName(name); setTempEmail(email); setMode("edit"); }}
                       className="w-full flex items-center gap-3 px-4 py-2.5 text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-sm"
                     >
-                      <User size={14} />
-                      Edit Profil
+                      <User size={14} /> Edit Profil
                     </button>
                     <button
                       onClick={() => setMode("settings")}
                       className="w-full flex items-center gap-3 px-4 py-2.5 text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-sm"
                     >
-                      <Settings size={14} />
-                      Pengaturan
+                      <Settings size={14} /> Pengaturan
                     </button>
-                    <button className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm opacity-40 cursor-not-allowed">
-                      <LogOut size={14} />
-                      Keluar <span className="ml-auto text-xs text-gray-600">(W3)</span>
+                    {/* ── Logout — sekarang aktif ── */}
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-sm"
+                    >
+                      <LogOut size={14} /> Keluar
                     </button>
                   </div>
                 </>
               )}
 
-              {/* === EDIT PROFIL === */}
+              {/* EDIT PROFIL */}
               {mode === "edit" && (
                 <>
                   <div className="px-4 py-3 border-b border-[#1f2937] flex items-center justify-between">
                     <span className="text-white text-sm font-semibold">Edit Profil</span>
-                    <button onClick={() => setMode("menu")} className="text-gray-500 hover:text-white">
-                      <X size={14} />
-                    </button>
+                    <button onClick={() => setMode("menu")} className="text-gray-500 hover:text-white"><X size={14} /></button>
                   </div>
                   <div className="px-4 py-4 space-y-3">
                     <div>
                       <label className="text-xs text-gray-500 font-mono uppercase tracking-widest">Nama</label>
-                      <input
-                        value={tempName}
-                        onChange={(e) => setTempName(e.target.value)}
-                        className="w-full mt-1.5 bg-[#0d1117] border border-[#1f2937] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500/50"
-                      />
+                      <input value={tempName} onChange={(e) => setTempName(e.target.value)}
+                        className="w-full mt-1.5 bg-[#0d1117] border border-[#1f2937] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500/50" />
                     </div>
                     <div>
                       <label className="text-xs text-gray-500 font-mono uppercase tracking-widest">Email</label>
-                      <input
-                        value={tempEmail}
-                        onChange={(e) => setTempEmail(e.target.value)}
-                        className="w-full mt-1.5 bg-[#0d1117] border border-[#1f2937] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500/50"
-                      />
+                      <input value={tempEmail} onChange={(e) => setTempEmail(e.target.value)}
+                        className="w-full mt-1.5 bg-[#0d1117] border border-[#1f2937] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500/50" />
                     </div>
                     <div className="flex gap-2 pt-1">
-                      <button onClick={handleSave} className="flex-1 bg-amber-500 hover:bg-amber-400 text-black text-sm font-semibold py-2 rounded-lg transition-colors">
-                        Simpan
-                      </button>
-                      <button onClick={() => setMode("menu")} className="flex-1 bg-[#0d1117] border border-[#1f2937] hover:bg-white/5 text-gray-400 text-sm py-2 rounded-lg transition-colors">
-                        Batal
-                      </button>
+                      <button onClick={handleSave} className="flex-1 bg-amber-500 hover:bg-amber-400 text-black text-sm font-semibold py-2 rounded-lg transition-colors">Simpan</button>
+                      <button onClick={() => setMode("menu")} className="flex-1 bg-[#0d1117] border border-[#1f2937] hover:bg-white/5 text-gray-400 text-sm py-2 rounded-lg transition-colors">Batal</button>
                     </div>
                   </div>
                 </>
               )}
 
-              {/* === PENGATURAN === */}
+              {/* PENGATURAN */}
               {mode === "settings" && (
                 <>
                   <div className="px-4 py-3 border-b border-[#1f2937] flex items-center justify-between">
                     <span className="text-white text-sm font-semibold">Pengaturan</span>
-                    <button onClick={() => setMode("menu")} className="text-gray-500 hover:text-white">
-                      <X size={14} />
-                    </button>
+                    <button onClick={() => setMode("menu")} className="text-gray-500 hover:text-white"><X size={14} /></button>
                   </div>
                   <div className="px-4 py-4 space-y-4">
-
-                    {/* Tema */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm text-gray-300">
-                        {darkMode ? <Moon size={14} /> : <Sun size={14} />}
-                        Mode Gelap
+                        {darkMode ? <Moon size={14} /> : <Sun size={14} />} Mode Gelap
                       </div>
                       <Toggle value={darkMode} onChange={() => setDarkMode(!darkMode)} />
                     </div>
-
-                    {/* Bahasa */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm text-gray-300">
-                        <Globe size={14} />
-                        Bahasa
+                        <Globe size={14} /> Bahasa
                       </div>
-                      <select
-                        value={language}
-                        onChange={(e) => setLanguage(e.target.value)}
-                        className="bg-[#0d1117] border border-[#1f2937] text-white text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50"
-                      >
+                      <select value={language} onChange={(e) => setLanguage(e.target.value)}
+                        className="bg-[#0d1117] border border-[#1f2937] text-white text-xs rounded-lg px-2 py-1 focus:outline-none">
                         <option value="id">Indonesia</option>
                         <option value="en">English</option>
                       </select>
                     </div>
-
-                    {/* Suara notifikasi */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm text-gray-300">
-                        <Bell size={14} />
-                        Suara Notifikasi
+                        <Bell size={14} /> Suara Notifikasi
                       </div>
                       <Toggle value={notifSound} onChange={() => setNotifSound(!notifSound)} />
                     </div>
-
-                    {/* Auto refresh */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm text-gray-300">
-                        <Settings size={14} />
-                        Auto Refresh Data
+                        <Settings size={14} /> Auto Refresh Data
                       </div>
                       <Toggle value={autoRefresh} onChange={() => setAutoRefresh(!autoRefresh)} />
                     </div>
-
-                    <button
-                      onClick={() => setMode("menu")}
-                      className="w-full bg-amber-500 hover:bg-amber-400 text-black text-sm font-semibold py-2 rounded-lg transition-colors mt-2"
-                    >
+                    <button onClick={() => setMode("menu")} className="w-full bg-amber-500 hover:bg-amber-400 text-black text-sm font-semibold py-2 rounded-lg transition-colors mt-2">
                       Simpan Pengaturan
                     </button>
                   </div>
                 </>
               )}
-
             </div>
           )}
         </div>
