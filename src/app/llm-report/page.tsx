@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Navbar from "@/components/layout/Navbar";
+import { fetchReclamationZones, fetchReports, saveReport, type ReclamationZoneRow, type ReportRow } from "@/lib/api/reports";
 import {
   FileText, Truck, ShieldAlert, Wind, Leaf,
   AlertTriangle, Info, ChevronRight, Clock,
@@ -169,6 +170,57 @@ const MOCK_HISTORY: HistoryItem[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
+
+function getString(row: Record<string, unknown>, keys: string[], fallback = "") {
+  for (const key of keys) {
+    if (typeof row[key] === "string" && row[key]) return row[key] as string;
+    if (typeof row[key] === "number") return String(row[key]);
+  }
+  return fallback;
+}
+
+function getNumber(row: Record<string, unknown>, keys: string[], fallback = 0) {
+  for (const key of keys) {
+    if (typeof row[key] === "number") return row[key] as number;
+    if (typeof row[key] === "string" && row[key] !== "") {
+      const parsed = Number(row[key]);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+  }
+  return fallback;
+}
+
+function normalizeShift(value: string): Shift {
+  return value === "Siang" || value === "Malam" ? value : "Pagi";
+}
+
+function normalizeReportRow(row: ReportRow): HistoryItem {
+  const item = row as Record<string, unknown>;
+  const createdAt = getString(item, ["timestamp", "created_at"], new Date().toISOString());
+  const tanggal = getString(item, ["tanggal", "date", "report_date"], createdAt.split("T")[0]);
+  const report = item.report as Partial<ReportData> | undefined;
+
+  return {
+    id: getString(item, ["id"], `rpt-${createdAt}`),
+    tanggal,
+    shift: normalizeShift(getString(item, ["shift"], report?.shift ?? "Pagi")),
+    status: getString(item, ["status"], "selesai") === "gagal" ? "gagal" : "selesai",
+    summary:
+      getString(item, ["summary", "executive_summary", "decision_text"], "") ||
+      report?.executiveSummary ||
+      "Laporan tersimpan di Supabase.",
+  };
+}
+
+function normalizeReclamationZone(row: ReclamationZoneRow) {
+  const item = row as Record<string, unknown>;
+  return {
+    area: getString(item, ["area", "name", "zone"], "Area"),
+    completion: getNumber(item, ["completion", "progress", "completion_percentage"], 0),
+    vegetasiIndex: getNumber(item, ["vegetasiIndex", "vegetasi_index", "vegetation_index"], 0),
+    status: getString(item, ["status"], "On Track"),
+  };
+}
 
 function SectionLabel({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
   return (
@@ -420,6 +472,28 @@ export default function LLMReportPage() {
   const [report, setReport]       = useState<ReportData | null>(null);
   const [history, setHistory]     = useState<HistoryItem[]>(MOCK_HISTORY);
   const [viewReport, setViewReport] = useState<HistoryItem | null>(null);
+  const [reclamationZones, setReclamationZones] = useState<ReclamationData["zones"]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadReports = async () => {
+      const data = await fetchReports();
+      if (mounted && data.length > 0) setHistory(data.map(normalizeReportRow));
+    };
+
+    const loadReclamationZones = async () => {
+      const data = await fetchReclamationZones();
+      if (mounted && data.length > 0) setReclamationZones(data.map(normalizeReclamationZone));
+    };
+
+    loadReports();
+    loadReclamationZones();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // ── Generate report ──────────────────────────────────────────────────────
   // API integration point:
@@ -438,6 +512,9 @@ export default function LLMReportPage() {
     await new Promise((r) => setTimeout(r, 2200)); // simulate LLM latency
 
     const data = generateMockReport(tanggal, shift);
+    if (reclamationZones.length > 0) {
+      data.reclamation = { zones: reclamationZones };
+    }
     setReport(data);
     setStatus("done");
 
@@ -449,8 +526,17 @@ export default function LLMReportPage() {
       status: "selesai",
       summary: data.executiveSummary.slice(0, 80) + "...",
     };
+    const inserted = await saveReport({
+      tanggal,
+      shift,
+      status: "selesai",
+      summary: newItem.summary,
+      executive_summary: data.executiveSummary,
+      report: data,
+    });
+    if (inserted) newItem.id = normalizeReportRow(inserted).id;
     setHistory((prev) => [newItem, ...prev]);
-  }, [tanggal, shift]);
+  }, [tanggal, shift, reclamationZones]);
 
   return (
     <AppLayout>

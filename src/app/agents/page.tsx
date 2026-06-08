@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Navbar from "@/components/layout/Navbar";
 import StatusBadge from "@/components/ui/StatusBadge";
-import { mockAgents, type Agent, type AgentStatus, type HeavyEquipmentAgent, type SafetyAgentType } from "@/lib/api/mock-data";
+import { fetchAgentErrors, fetchAgentLogs, fetchAgents, subscribeAgents } from "@/lib/api/agents";
+import { mockAgents, type ActivityLog, type Agent, type AgentStatus, type ErrorLog, type HeavyEquipmentAgent, type SafetyAgentType } from "@/lib/api/mock-data";
 import {
   Bot, Battery, MapPin, Search, X, Shield,
   Thermometer, Wifi, WifiOff, Clock, AlertTriangle,
   CheckCircle, XCircle, Camera, Bell, HardHat,
-  Activity, Zap, Fuel,
+  Activity, Zap, Fuel, Loader2,
 } from "lucide-react";
 
 // ─── Filter definitions ───────────────────────────────────────────────────────
@@ -68,6 +69,40 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
       <div className="text-xs text-white text-right">{children}</div>
     </div>
   );
+}
+
+function formatTime(value: unknown) {
+  if (typeof value !== "string" || !value) return "--:--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+}
+
+function normalizeActivityLog(row: ActivityLog | Record<string, unknown>): ActivityLog {
+  const item = row as Record<string, unknown>;
+  return {
+    time: typeof item.time === "string" ? item.time : formatTime(item.created_at),
+    event:
+      typeof item.event === "string" ? item.event :
+      typeof item.message === "string" ? item.message :
+      typeof item.description === "string" ? item.description :
+      "Aktivitas agent tercatat.",
+  };
+}
+
+function normalizeErrorLog(row: ErrorLog | Record<string, unknown>): ErrorLog {
+  const item = row as Record<string, unknown>;
+  return {
+    time: typeof item.time === "string" ? item.time : formatTime(item.created_at),
+    code:
+      typeof item.code === "string" ? item.code :
+      typeof item.error_code === "string" ? item.error_code :
+      "ERROR",
+    message:
+      typeof item.message === "string" ? item.message :
+      typeof item.description === "string" ? item.description :
+      "Error agent tercatat.",
+  };
 }
 
 // ─── Modal: Heavy Equipment ───────────────────────────────────────────────────
@@ -347,22 +382,68 @@ export default function AgentsPage() {
   const [filter, setFilter]       = useState<FilterStatus>("all");
   const [search, setSearch]       = useState("");
   const [selected, setSelected]   = useState<Agent | null>(null);
+  const [agents, setAgents]       = useState<Agent[]>(mockAgents);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadAgents = async () => {
+      setLoading(true);
+      const data = await fetchAgents();
+      if (!mounted) return;
+      setAgents(data.length > 0 ? data : mockAgents);
+      setLoading(false);
+    };
+
+    loadAgents();
+
+    const channel = subscribeAgents((data) => {
+      if (mounted) setAgents(data.length > 0 ? data : mockAgents);
+    });
+
+    return () => {
+      mounted = false;
+      channel.unsubscribe();
+    };
+  }, []);
 
   const counts = useMemo(() => ({
-    active:  mockAgents.filter((a) => a.status === "active").length,
-    idle:    mockAgents.filter((a) => a.status === "idle").length,
-    error:   mockAgents.filter((a) => a.status === "error").length,
-    offline: mockAgents.filter((a) => a.status === "offline").length,
-  }), []);
+    active:  agents.filter((a) => a.status === "active").length,
+    idle:    agents.filter((a) => a.status === "idle").length,
+    error:   agents.filter((a) => a.status === "error").length,
+    offline: agents.filter((a) => a.status === "offline").length,
+  }), [agents]);
 
   const visible = useMemo(() =>
-    mockAgents.filter((a) => {
+    agents.filter((a) => {
       const matchFilter = filter === "all" || a.status === filter;
       const matchSearch = a.name.toLowerCase().includes(search.toLowerCase()) ||
                           a.id.toLowerCase().includes(search.toLowerCase());
       return matchFilter && matchSearch;
     }),
-  [filter, search]);
+  [agents, filter, search]);
+
+  const handleSelectAgent = async (agent: Agent) => {
+    const [logs, errors] = await Promise.all([
+      fetchAgentLogs(agent.id),
+      fetchAgentErrors(agent.id),
+    ]);
+
+    if ((agent as any).type === "safety") {
+      setSelected({
+        ...(agent as SafetyAgentType),
+        incidentHistory: logs.length > 0 ? logs.map(normalizeActivityLog) : (agent as SafetyAgentType).incidentHistory,
+      });
+      return;
+    }
+
+    setSelected({
+      ...(agent as HeavyEquipmentAgent),
+      activityHistory: logs.length > 0 ? logs.map(normalizeActivityLog) : (agent as HeavyEquipmentAgent).activityHistory,
+      errorLog: errors.length > 0 ? errors.map(normalizeErrorLog) : (agent as HeavyEquipmentAgent).errorLog,
+    });
+  };
 
   return (
     <AppLayout>
@@ -454,7 +535,14 @@ export default function AgentsPage() {
               </tr>
             </thead>
             <tbody>
-              {visible.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-xs text-gray-600 font-mono">
+                    <Loader2 size={14} className="inline animate-spin mr-2" />
+                    Memuat agents...
+                  </td>
+                </tr>
+              ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 py-10 text-center text-xs text-gray-600 font-mono">
                     Tidak ada agent yang cocok dengan filter.
@@ -464,7 +552,7 @@ export default function AgentsPage() {
                 visible.map((agent) => (
                   <tr
                     key={agent.id}
-                    onClick={() => setSelected(agent)}
+                    onClick={() => handleSelectAgent(agent)}
                     className="border-b border-[#1f2937]/50 hover:bg-white/5 transition-colors cursor-pointer group"
                   >
                     <td className="px-5 py-4">
@@ -517,7 +605,7 @@ export default function AgentsPage() {
           {/* Row count */}
           <div className="px-5 py-3 border-t border-[#1f2937] flex items-center justify-between">
             <span className="text-xs text-gray-600 font-mono">
-              Menampilkan {visible.length} dari {mockAgents.length} agent
+              Menampilkan {visible.length} dari {agents.length} agent
             </span>
             <span className="text-xs text-gray-600 font-mono">
               Klik baris untuk detail ›
