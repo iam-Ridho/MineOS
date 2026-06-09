@@ -1,9 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import AppLayout from "@/components/layout/AppLayout";
 import Navbar from "@/components/layout/Navbar";
-import { mockAgents } from "@/lib/api/mock-data";
+import { mockAgents, type Agent } from "@/lib/api/mock-data";
+import { fetchAgents, subscribeAgents } from "@/lib/api/agents";
 import { Bot, Battery, MapPin } from "lucide-react";
 
 const CesiumViewer = dynamic(
@@ -29,6 +31,42 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default function DigitalTwinPage() {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadAgents = async () => {
+      try {
+        setLoading(true);
+        const data = await fetchAgents();
+        if (!mounted) return;
+        // Use live agents from backend, fallback to mockAgents if empty
+        setAgents(data.length > 0 ? data : mockAgents);
+      } catch (err) {
+        console.error("Failed to load agents in Digital Twin:", err);
+        if (mounted) setAgents(mockAgents);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadAgents();
+
+    // Subscribe to live updates in database
+    const channel = subscribeAgents((data) => {
+      if (mounted) {
+        setAgents(data.length > 0 ? data : mockAgents);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      channel.unsubscribe();
+    };
+  }, []);
+
   return (
     <AppLayout>
       <Navbar title="Digital Twin" />
@@ -52,15 +90,15 @@ export default function DigitalTwinPage() {
         </div>
 
         <div className="h-[500px]">
-          <CesiumViewer />
+          <CesiumViewer agents={agents} />
         </div>
 
         <div className="rounded-xl border border-[#1f2937] bg-[#111827] overflow-hidden">
           <div className="px-5 py-4 border-b border-[#1f2937]">
-            <h3 className="text-white font-semibold text-sm">Posisi Agent</h3>
+            <h3 className="text-white font-semibold text-sm">Posisi Agent {loading && "(Memperbarui...)"}</h3>
           </div>
           <div className="divide-y divide-[#1f2937]">
-            {mockAgents.map((agent) => (
+            {agents.map((agent) => (
               <div key={agent.id} className="flex items-center justify-between px-5 py-3">
                 <div className="flex items-center gap-3">
                   <div className="w-7 h-7 rounded-lg bg-[#0d1117] border border-[#1f2937] flex items-center justify-center">

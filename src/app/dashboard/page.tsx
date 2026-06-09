@@ -1,11 +1,60 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Navbar from "@/components/layout/Navbar";
 import KPICard from "@/components/ui/KPICard";
 import ProductionChart from "@/components/charts/ProductionChart";
-import { mockKPIs, mockAgents } from "@/lib/lib/api/mock-data";
+import { mockKPIs, mockAgents, type Agent } from "@/lib/api/mock-data";
+import { fetchAgents, subscribeAgents } from "@/lib/api/agents";
 import { Bot, Activity, AlertTriangle, Pickaxe } from "lucide-react";
 
 export default function DashboardPage() {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadAgents = async () => {
+      try {
+        setLoading(true);
+        const data = await fetchAgents();
+        if (!mounted) return;
+        setAgents(data.length > 0 ? data : mockAgents);
+      } catch (err) {
+        console.error("Failed to load agents in Dashboard:", err);
+        if (mounted) setAgents(mockAgents);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadAgents();
+
+    const channel = subscribeAgents((data) => {
+      if (mounted) {
+        setAgents(data.length > 0 ? data : mockAgents);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      channel.unsubscribe();
+    };
+  }, []);
+
+  // Compute live KPIs based on active state, falling back to mock KPIs if no live agents
+  const activeCount = agents.filter((a) => a.status === "active").length;
+  const errorCount = agents.filter((a) => a.status === "error").length;
+
+  const liveKPIs = {
+    totalAgents: agents.length > 0 ? agents.length : mockKPIs.totalAgents,
+    activeAgents: agents.length > 0 ? activeCount : mockKPIs.activeAgents,
+    alertCount: agents.length > 0 ? errorCount : mockKPIs.alertCount,
+    productionRateToday: mockKPIs.productionRateToday, // Fallback as production rates are mocked
+  };
+
   return (
     <AppLayout>
       <Navbar title="Dashboard" />
@@ -16,7 +65,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard
             title="Total Agents"
-            value={mockKPIs.totalAgents}
+            value={liveKPIs.totalAgents}
             icon={Bot}
             color="blue"
             trend="neutral"
@@ -24,23 +73,23 @@ export default function DashboardPage() {
           />
           <KPICard
             title="Agents Aktif"
-            value={mockKPIs.activeAgents}
+            value={liveKPIs.activeAgents}
             icon={Activity}
             color="emerald"
             trend="up"
-            trendValue="+2"
+            trendValue={agents.length > 0 ? "Live" : "+2"}
           />
           <KPICard
             title="Alert"
-            value={mockKPIs.alertCount}
+            value={liveKPIs.alertCount}
             icon={AlertTriangle}
             color="red"
             trend="down"
-            trendValue="-1"
+            trendValue={agents.length > 0 ? "Live" : "-1"}
           />
           <KPICard
             title="Produksi Hari Ini"
-            value={mockKPIs.productionRateToday.toLocaleString()}
+            value={liveKPIs.productionRateToday.toLocaleString()}
             unit="ton"
             icon={Pickaxe}
             color="amber"
@@ -54,9 +103,11 @@ export default function DashboardPage() {
 
         {/* Status Agents */}
         <div className="rounded-xl border border-[#1f2937] bg-[#111827] p-5">
-          <h3 className="text-white font-semibold text-sm mb-4">Status Agents</h3>
+          <h3 className="text-white font-semibold text-sm mb-4">
+            Status Agents {loading && <span className="text-xs text-gray-500 font-normal ml-2">(Memperbarui...)</span>}
+          </h3>
           <div className="space-y-3">
-            {mockAgents.map((agent) => (
+            {agents.map((agent) => (
               <div
                 key={agent.id}
                 className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-[#0d1117] border border-[#1f2937]"

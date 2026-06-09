@@ -1,0 +1,21 @@
+
+> mineos-dashboard@0.1.0 dev
+> next dev -p 3000
+
+  ▲ Next.js 14.2.3
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 3.3s
+ ○ Compiling /digital-twin ...
+ ✓ Compiled /digital-twin in 18s (3507 modules)
+ GET /digital-twin 200 in 18452ms
+ ✓ Compiled in 919ms (1756 modules)
+ GET /digital-twin 200 in 61ms
+ GET /digital-twin 200 in 57ms
+ ✓ Compiled in 2.8s (3480 modules)
+ ✓ Compiled in 9.5s (3494 modules)
+ ✓ Compiled in 11.6s (3494 modules)
+ ✓ Compiled in 10.5s (3494 modules)
+ ✓ Compiled in 1923ms (3494 modules)

@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Navbar from "@/components/layout/Navbar";
-import { fetchReclamationZones, fetchReports, saveReport, type ReclamationZoneRow, type ReportRow } from "@/lib/api/reports";
+import { fetchReclamationZones, fetchReports, generateLLMReport, saveReport, type ReclamationZoneRow, type ReportRow } from "@/lib/api/reports";
 import {
   FileText, Truck, ShieldAlert, Wind, Leaf,
   AlertTriangle, Info, ChevronRight, Clock,
@@ -18,7 +18,7 @@ import {
 
 type Shift = "Pagi" | "Siang" | "Malam";
 type AlertPriority = "CRITICAL" | "WARNING" | "INFO";
-type ReportStatus = "idle" | "loading" | "done";
+type ReportStatus = "idle" | "loading" | "done" | "error";
 
 interface FleetData {
   totalArmada: number;
@@ -219,6 +219,86 @@ function normalizeReclamationZone(row: ReclamationZoneRow) {
     completion: getNumber(item, ["completion", "progress", "completion_percentage"], 0),
     vegetasiIndex: getNumber(item, ["vegetasiIndex", "vegetasi_index", "vegetation_index"], 0),
     status: getString(item, ["status"], "On Track"),
+  };
+}
+
+function getObject(row: Record<string, unknown>, keys: string[]): Record<string, unknown> | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function getArray(row: Record<string, unknown>, keys: string[]): Record<string, unknown>[] {
+  for (const key of keys) {
+    const value = row[key];
+    if (Array.isArray(value)) return value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
+  }
+  return [];
+}
+
+function normalizePriority(value: string): AlertPriority {
+  const upper = value.toUpperCase();
+  if (upper === "CRITICAL" || upper === "WARNING") return upper;
+  return "INFO";
+}
+
+function normalizeLLMReportResponse(response: ReportRow, tanggal: string, shift: Shift): ReportData {
+  const root = (getObject(response, ["report", "data", "result"]) ?? response) as Record<string, unknown>;
+  const fallback = generateMockReport(tanggal, shift);
+  const fleet = getObject(root, ["fleet", "fleetData"]) ?? {};
+  const safety = getObject(root, ["safety", "safetyData"]) ?? {};
+  const emission = getObject(root, ["emission", "emissionData"]) ?? {};
+  const reclamation = getObject(root, ["reclamation", "reclamationData"]) ?? {};
+
+  return {
+    generatedAt: getString(root, ["generatedAt", "generated_at", "timestamp"], new Date().toLocaleString("id-ID")),
+    tanggal: getString(root, ["tanggal", "date", "report_date"], tanggal),
+    shift: normalizeShift(getString(root, ["shift"], shift)),
+    executiveSummary:
+      getString(root, ["executiveSummary", "executive_summary", "summary", "decision_text"], "") ||
+      fallback.executiveSummary,
+    fleet: {
+      totalArmada: getNumber(fleet, ["totalArmada", "total_armada", "totalFleet"], fallback.fleet.totalArmada),
+      gpsOnline: getNumber(fleet, ["gpsOnline", "gps_online"], fallback.fleet.gpsOnline),
+      gpsOffline: getNumber(fleet, ["gpsOffline", "gps_offline"], fallback.fleet.gpsOffline),
+      avgFuelConsumption: getNumber(fleet, ["avgFuelConsumption", "avg_fuel_consumption"], fallback.fleet.avgFuelConsumption),
+      rekomendasiRute: getString(fleet, ["rekomendasiRute", "rekomendasi_rute", "routeRecommendation"], fallback.fleet.rekomendasiRute),
+      penghematanFuel: getString(fleet, ["penghematanFuel", "penghematan_fuel", "fuelSaving"], fallback.fleet.penghematanFuel),
+      kendaraanBermasalah: getArray(fleet, ["kendaraanBermasalah", "kendaraan_bermasalah", "problemVehicles"])
+        .map((item) => getString(item, ["name", "vehicle_id", "kendaraan", "message"]))
+        .filter(Boolean),
+    },
+    safety: {
+      alertCritical: getNumber(safety, ["alertCritical", "alert_critical", "critical"], fallback.safety.alertCritical),
+      alertWarning: getNumber(safety, ["alertWarning", "alert_warning", "warning"], fallback.safety.alertWarning),
+      alertInfo: getNumber(safety, ["alertInfo", "alert_info", "info"], fallback.safety.alertInfo),
+      incidents: getArray(safety, ["incidents", "alerts"]).map((item) => ({
+        kendaraan: getString(item, ["kendaraan", "vehicle_id", "vehicle"], "-"),
+        jenis: getString(item, ["jenis", "alert_type", "type"], "Alert"),
+        zona: getString(item, ["zona", "zone"], "-"),
+        severity: normalizePriority(getString(item, ["severity", "priority"], "INFO")),
+      })),
+      cuacaStatus: getString(safety, ["cuacaStatus", "cuaca_status", "weather"], fallback.safety.cuacaStatus),
+    },
+    emission: {
+      targetBulan: getNumber(emission, ["targetBulan", "target_bulan", "target"], fallback.emission.targetBulan),
+      actualBulan: getNumber(emission, ["actualBulan", "actual_bulan", "actual"], fallback.emission.actualBulan),
+      persentase: getNumber(emission, ["persentase", "percentage"], fallback.emission.persentase),
+      trendMingguIni: getNumber(emission, ["trendMingguIni", "trend_minggu_ini", "trend"], fallback.emission.trendMingguIni),
+      co2PerTrip: getNumber(emission, ["co2PerTrip", "co2_per_trip"], fallback.emission.co2PerTrip),
+      totalTrip: getNumber(emission, ["totalTrip", "total_trip"], fallback.emission.totalTrip),
+    },
+    reclamation: {
+      zones: getArray(reclamation, ["zones", "areas"]).map(normalizeReclamationZone),
+    },
+    alerts: getArray(root, ["alerts", "recommendations", "anomali"]).map((item) => ({
+      priority: normalizePriority(getString(item, ["priority", "severity"], "INFO")),
+      message: getString(item, ["message", "summary", "description"], "Alert terdeteksi oleh LLM."),
+      action: getString(item, ["action", "recommendation", "rekomendasi"], "Tinjau kondisi operasional terkait."),
+      waktu: getString(item, ["waktu", "time", "created_at"], new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })),
+    })),
   };
 }
 
@@ -470,6 +550,7 @@ export default function LLMReportPage() {
   const [shift, setShift]         = useState<Shift>("Pagi");
   const [status, setStatus]       = useState<ReportStatus>("idle");
   const [report, setReport]       = useState<ReportData | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
   const [history, setHistory]     = useState<HistoryItem[]>(MOCK_HISTORY);
   const [viewReport, setViewReport] = useState<HistoryItem | null>(null);
   const [reclamationZones, setReclamationZones] = useState<ReclamationData["zones"]>([]);
@@ -508,34 +589,39 @@ export default function LLMReportPage() {
   const handleGenerate = useCallback(async () => {
     setStatus("loading");
     setReport(null);
+    setErrorMessage("");
 
-    await new Promise((r) => setTimeout(r, 2200)); // simulate LLM latency
+    try {
+      const response = await generateLLMReport({ scenario: "normal" });
+      const data = normalizeLLMReportResponse(response, tanggal, shift);
+      if (reclamationZones.length > 0 && data.reclamation.zones.length === 0) {
+        data.reclamation = { zones: reclamationZones };
+      }
+      setReport(data);
+      setStatus("done");
 
-    const data = generateMockReport(tanggal, shift);
-    if (reclamationZones.length > 0) {
-      data.reclamation = { zones: reclamationZones };
+      const newItem: HistoryItem = {
+        id: `rpt-${Date.now()}`,
+        tanggal,
+        shift,
+        status: "selesai",
+        summary: data.executiveSummary.slice(0, 80) + "...",
+      };
+      const inserted = await saveReport({
+        tanggal,
+        shift,
+        status: "selesai",
+        summary: newItem.summary,
+        executive_summary: data.executiveSummary,
+        report: data,
+      });
+      if (inserted) newItem.id = normalizeReportRow(inserted).id;
+      setHistory((prev) => [newItem, ...prev]);
+    } catch (error) {
+      console.error("Failed to generate LLM report:", error);
+      setStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : "Gagal menghubungi backend LLM report.");
     }
-    setReport(data);
-    setStatus("done");
-
-    // prepend to history
-    const newItem: HistoryItem = {
-      id: `rpt-${Date.now()}`,
-      tanggal,
-      shift,
-      status: "selesai",
-      summary: data.executiveSummary.slice(0, 80) + "...",
-    };
-    const inserted = await saveReport({
-      tanggal,
-      shift,
-      status: "selesai",
-      summary: newItem.summary,
-      executive_summary: data.executiveSummary,
-      report: data,
-    });
-    if (inserted) newItem.id = normalizeReportRow(inserted).id;
-    setHistory((prev) => [newItem, ...prev]);
   }, [tanggal, shift, reclamationZones]);
 
   return (
@@ -613,10 +699,20 @@ export default function LLMReportPage() {
               </p>
             </div>
           )}
+
+          {status === "error" && (
+            <div className="mt-4 rounded-xl bg-red-500/5 border border-red-500/20 px-4 py-3 flex items-start gap-3">
+              <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs text-red-400 font-semibold">Gagal generate laporan dari backend</p>
+                <p className="text-xs text-gray-500 mt-0.5">{errorMessage}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── SECTIONS 2–4 : REPORT CONTENT ─────────────────────────────── */}
-        {status === "idle" && !report && (
+        {(status === "idle" || status === "error") && !report && (
           <div className="rounded-2xl border border-dashed border-[#1f2937] py-16 text-center">
             <BarChart3 size={28} className="text-gray-700 mx-auto mb-3" />
             <p className="text-gray-500 text-sm">Pilih tanggal dan shift, lalu klik <span className="text-amber-400 font-semibold">Generate Laporan</span></p>

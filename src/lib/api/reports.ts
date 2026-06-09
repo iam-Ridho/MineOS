@@ -3,6 +3,43 @@ import { supabase } from "@/lib/supabase/client";
 export type ReportRow = Record<string, unknown>;
 export type ProductionLogRow = Record<string, unknown>;
 export type ReclamationZoneRow = Record<string, unknown>;
+export type LLMReportPayload = {
+  scenario?: string;
+  tanggal?: string;
+  shift?: string;
+};
+
+function getBackendBaseUrl() {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, "");
+
+  return baseUrl?.replace(/\/$/, "") ?? "";
+}
+
+export async function generateLLMReport(payload: LLMReportPayload): Promise<ReportRow> {
+  const baseUrl = getBackendBaseUrl();
+  const endpoint = `${baseUrl}/api/llm/report`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await response.json().catch(() => null)) as ReportRow | null;
+
+  if (!response.ok) {
+    const message =
+      typeof data?.message === "string" ? data.message :
+      typeof data?.error === "string" ? data.error :
+      `LLM report request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  if (!data) throw new Error("LLM report response is empty.");
+  return data;
+}
 
 export async function fetchReports(): Promise<ReportRow[]> {
   try {
