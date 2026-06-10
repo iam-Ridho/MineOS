@@ -1,43 +1,38 @@
 class Alert {
-  final String id;
-  final String vehicleId;
-  final String vehicleName;
+  final int id;
+  final String alertType;
+  final String severity;
   final String message;
-  final String severity; // 'red', 'yellow', 'green'
-  final String category; // 'fatigue', 'fuel', 'speed', 'maintenance'
-  final DateTime createdAt;
-  final bool isAcknowledged;
+  final String? vehicleId;
+  final String? zone;
+  final bool acknowledged;
+  final String? acknowledgedBy;
+  final String? acknowledgedAt;
+  final String? createdAt;
 
   const Alert({
     required this.id,
-    required this.vehicleId,
-    required this.vehicleName,
-    required this.message,
+    required this.alertType,
     required this.severity,
-    required this.category,
-    required this.createdAt,
-    required this.isAcknowledged,
+    required this.message,
+    this.vehicleId,
+    this.zone,
+    required this.acknowledged,
+    this.acknowledgedBy,
+    this.acknowledgedAt,
+    this.createdAt,
   });
-
-  Alert copyWith({bool? isAcknowledged}) => Alert(
-        id: id,
-        vehicleId: vehicleId,
-        vehicleName: vehicleName,
-        message: message,
-        severity: severity,
-        category: category,
-        createdAt: createdAt,
-        isAcknowledged: isAcknowledged ?? this.isAcknowledged,
-      );
 
   factory Alert.fromJson(Map<String, dynamic> json) => Alert(
         id: json['id'],
+        alertType: json['alert_type'] ?? '',
+        severity: json['severity'] ?? 'low',
+        message: json['message'] ?? '',
         vehicleId: json['vehicle_id'],
-        vehicleName: json['vehicle_name'],
-        message: json['message'],
-        severity: json['severity'],
-        category: json['category'],
-        createdAt: DateTime.parse(json['created_at']),
-        isAcknowledged: json['is_acknowledged'] ?? false,
+        zone: json['zone'],
+        acknowledged: json['acknowledged'] ?? false,
+        acknowledgedBy: json['acknowledged_by'],
+        acknowledgedAt: json['acknowledged_at'],
+        createdAt: json['created_at'],
       );
 }

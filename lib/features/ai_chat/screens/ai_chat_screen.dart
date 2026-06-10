@@ -1,5 +1,8 @@
-import 'dart:math';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 
 class AIChatScreen extends StatefulWidget {
   const AIChatScreen({super.key});
@@ -8,91 +11,111 @@ class AIChatScreen extends StatefulWidget {
   State<AIChatScreen> createState() => _AIChatScreenState();
 }
 
-class _AIChatScreenState extends State<AIChatScreen> {
-  final TextEditingController _controller = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
+class _AIChatScreenState extends State<AIChatScreen>
+    with TickerProviderStateMixin {
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
+  late AnimationController _pulseController;
+  late AnimationController _typingController;
 
-  final List<Map<String, dynamic>> _messages = [
-    {
-      'role': 'assistant',
-      'text': 'Halo! Saya MineOS AI Assistant. Saya bisa membantu analisa kondisi operasional tambang, laporan kendaraan, dan rekomendasi keselamatan. Ada yang bisa saya bantu?',
-      'time': DateTime.now(),
-    }
+  // Ganti dengan IP backend Ridho
+  static const String _baseUrl = 'http://IP:10.10.14.40:8000';
+
+  final List<String> _quickPrompts = [
+    '🚛 Kondisi armada sekarang?',
+    '⚠️ Alert aktif apa saja?',
+    '😴 Siapa operator yang perlu rotasi?',
+    '⛽ Kendaraan BBM kritis?',
+    '📊 Ringkasan operasional hari ini',
   ];
 
-  // Simulasi respons AI berdasarkan keyword
-  final Map<String, List<String>> _aiResponses = {
-    'fatigue': [
-      'Berdasarkan data terkini, operator Andi Wijaya (DT-002) memiliki fatigue score 80% — sudah melewati batas aman 70%. Rekomendasi: segera rotasi operator atau berikan waktu istirahat minimal 30 menit.',
-      'Tingkat kelelahan operator di Pit B cukup mengkhawatirkan. Ada 2 operator yang mendekati batas kritis. Saran: terapkan jadwal shift lebih ketat dan aktifkan monitoring real-time.',
-    ],
-    'bbm': [
-      'DT-003 memiliki level BBM 20% — kritis! Segera arahkan ke fuel station terdekat di koordinat -1.940, 116.330. Estimasi jarak: 2.1 km.',
-      'Status BBM armada saat ini: DT-001 (75% ✅), DT-002 (45% ⚠️), DT-003 (20% 🔴), EX-001 (90% ✅). Prioritaskan pengisian DT-003 segera.',
-    ],
-    'laporan': [
-      'Laporan Operasional Hari Ini:\n\n📊 Total kendaraan aktif: 4\n✅ Beroperasi normal: 2\n⚠️ Perlu perhatian: 1\n🔴 Status kritis: 1\n\nProduksi estimasi: 1.240 ton\nEfisiensi operasional: 78%',
-      'Ringkasan shift pagi (06:00-14:00):\n• DT-001: 8 ritase, 320 ton\n• DT-002: 6 ritase, 240 ton (terhambat fatigue)\n• DT-003: 5 ritase, 200 ton (BBM kritis)\n• EX-001: Loading normal di Pit A',
-    ],
-    'cuaca': [
-      'Kondisi cuaca area Kideco saat ini: Cerah berawan, suhu 31°C, kelembaban 78%. Tidak ada peringatan hujan lebat dalam 6 jam ke depan. Kondisi aman untuk operasional.',
-    ],
-    'rekomendasi': [
-      'Rekomendasi prioritas hari ini:\n\n1. 🔴 Segera isi BBM DT-003\n2. 🔴 Rotasi operator Andi Wijaya (DT-002)\n3. ⚠️ Jadwalkan servis DT-002 minggu ini\n4. ✅ Pertahankan performa EX-001 di Pit A',
-    ],
-  };
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
 
-  String _generateResponse(String input) {
-    final lower = input.toLowerCase();
-    for (final key in _aiResponses.keys) {
-      if (lower.contains(key)) {
-        final responses = _aiResponses[key]!;
-        return responses[Random().nextInt(responses.length)];
-      }
-    }
-    // Default responses
-    final defaults = [
-      'Berdasarkan data sensor terkini, semua sistem berjalan dalam parameter normal. Ada aspek spesifik yang ingin Anda analisa?',
-      'Saya memantau 4 kendaraan aktif di area tambang. Untuk informasi detail, coba tanyakan tentang "fatigue", "BBM", "laporan", atau "rekomendasi".',
-      'Analisa AI sedang memproses data real-time dari seluruh sensor kendaraan. Apakah ada alert spesifik yang perlu ditindaklanjuti?',
-    ];
-    return defaults[Random().nextInt(defaults.length)];
+    _typingController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+
+    // Greeting awal
+    _messages.add({
+      'role': 'assistant',
+      'content':
+          'Selamat datang di MineOS AI Assistant.\n\nSaya siap membantu memantau kondisi operasional tambang. Tanyakan kondisi armada, alert safety, atau status operator.',
+    });
   }
 
-  void _sendMessage() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _typingController.dispose();
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendMessage(String text) async {
+    if (text.trim().isEmpty) return;
+    _controller.clear();
 
     setState(() {
-      _messages.add({
-        'role': 'user',
-        'text': text,
-        'time': DateTime.now(),
-      });
+      _messages.add({'role': 'user', 'content': text});
       _isLoading = true;
     });
-
-    _controller.clear();
     _scrollToBottom();
 
-    // Simulasi delay AI thinking
-    await Future.delayed(Duration(milliseconds: 800 + Random().nextInt(700)));
+    try {
+      // Build history dari messages sebelumnya (exclude greeting)
+      final history = _messages
+          .where((m) => _messages.indexOf(m) > 0)
+          .take(_messages.length - 2)
+          .map((m) => {'role': m['role']!, 'content': m['content']!})
+          .toList();
 
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/chat'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'message': text, 'history': history}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _messages.add({
+            'role': 'assistant',
+            'content': data['answer'] ?? 'Tidak ada respons.',
+            'context': data['context_scenario'] ?? '',
+            'model': data['model_used'] ?? '',
+          });
+          _isLoading = false;
+        });
+      } else {
+        _addErrorMessage('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      _addErrorMessage('Koneksi gagal. Cek jaringan.');
+    }
+    _scrollToBottom();
+  }
+
+  void _addErrorMessage(String msg) {
     setState(() {
-      _messages.add({
-        'role': 'assistant',
-        'text': _generateResponse(text),
-        'time': DateTime.now(),
-      });
+      _messages.add({'role': 'assistant', 'content': '⚠️ $msg', 'error': 'true'});
       _isLoading = false;
     });
-
-    _scrollToBottom();
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -103,291 +126,455 @@ class _AIChatScreenState extends State<AIChatScreen> {
     });
   }
 
-  String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1A237E),
-        title: Row(
+      backgroundColor: const Color(0xFF031427),
+      body: SafeArea(
+        child: Column(
           children: [
-            CircleAvatar(
-              backgroundColor: Colors.green.withOpacity(0.2),
-              radius: 16,
-              child: const Icon(Icons.smart_toy, color: Colors.green, size: 18),
-            ),
-            const SizedBox(width: 10),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('MineOS AI',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15)),
-                Text('Online • Memantau 4 kendaraan',
-                    style: TextStyle(color: Colors.white54, fontSize: 11)),
-              ],
-            ),
+            _buildHeader(),
+            _buildNeuralStatus(),
+            Expanded(child: _buildChatList()),
+            if (_messages.length <= 1) _buildQuickPrompts(),
+            _buildInputBar(),
           ],
         ),
       ),
-      body: Column(
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF031427),
+        border: Border(bottom: BorderSide(color: Color(0xFF1E2D45))),
+      ),
+      child: Row(
         children: [
-          // Quick action chips
-          Container(
-            color: const Color(0xFF1A1A2E),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  'Laporan hari ini',
-                  'Status BBM',
-                  'Fatigue operator',
-                  'Rekomendasi',
-                  'Cuaca',
-                ].map((label) => Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ActionChip(
-                    label: Text(label,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 11)),
-                    backgroundColor: const Color(0xFF0D1117),
-                    side: const BorderSide(color: Colors.white24),
-                    onPressed: () {
-                      _controller.text = label;
-                      _sendMessage();
-                    },
-                  ),
-                )).toList(),
+          Text('MineOS',
+              style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Text('AI Assistant',
+              style: GoogleFonts.inter(
+                  color: const Color(0xFF3B82F6),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w300)),
+          const Spacer(),
+          if (_messages.length > 1)
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _messages.clear();
+                  _messages.add({
+                    'role': 'assistant',
+                    'content': 'Sesi chat direset. Ada yang bisa saya bantu?',
+                  });
+                });
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E2D45),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFF2D3F55)),
+                ),
+                child: Text('RESET',
+                    style: GoogleFonts.inter(
+                        color: const Color(0xFF8892A4),
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNeuralStatus() {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1C30),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+            color: const Color(0xFF10B981).withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (_, __) => Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: Color.lerp(
+                  const Color(0xFF10B981),
+                  Colors.transparent,
+                  _pulseController.value,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF10B981).withOpacity(0.4),
+                    blurRadius: 6,
+                    spreadRadius: 1,
+                  )
+                ],
               ),
             ),
           ),
-          // Chat messages
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(12),
-              itemCount: _messages.length + (_isLoading ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == _messages.length && _isLoading) {
-                  return _TypingIndicator();
-                }
-                final msg = _messages[index];
-                final isUser = msg['role'] == 'user';
-                return _ChatBubble(
-                  text: msg['text'],
-                  isUser: isUser,
-                  time: _formatTime(msg['time']),
-                );
-              },
-            ),
-          ),
-          // Input area
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-            color: const Color(0xFF1A1A2E),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Tanya tentang kondisi tambang...',
-                      hintStyle: const TextStyle(
-                          color: Colors.white38, fontSize: 13),
-                      filled: true,
-                      fillColor: const Color(0xFF0D1117),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
-                    textInputAction: TextInputAction.send,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _sendMessage,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF1A237E),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.send, color: Colors.white, size: 20),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChatBubble extends StatelessWidget {
-  final String text;
-  final bool isUser;
-  final String time;
-  const _ChatBubble(
-      {required this.text, required this.isUser, required this.time});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isUser) ...[
-            CircleAvatar(
-              backgroundColor: const Color(0xFF1A237E),
-              radius: 14,
-              child: const Icon(Icons.smart_toy, color: Colors.white, size: 14),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Column(
-              crossAxisAlignment: isUser
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? const Color(0xFF1A237E)
-                        : const Color(0xFF1A1A2E),
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isUser ? 16 : 4),
-                      bottomRight: Radius.circular(isUser ? 4 : 16),
-                    ),
-                    border: isUser
-                        ? null
-                        : Border.all(color: Colors.white12),
-                  ),
-                  child: Text(text,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13, height: 1.4)),
-                ),
-                const SizedBox(height: 4),
-                Text(time,
-                    style: const TextStyle(
-                        color: Colors.white38, fontSize: 10)),
-              ],
-            ),
-          ),
-          if (isUser) const SizedBox(width: 8),
-        ],
-      ),
-    );
-  }
-}
-
-class _TypingIndicator extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: const Color(0xFF1A237E),
-            radius: 14,
-            child: const Icon(Icons.smart_toy, color: Colors.white, size: 14),
-          ),
+          const SizedBox(width: 8),
+          Text('NEURAL ENGINE ACTIVE',
+              style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF10B981),
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1)),
+          const Spacer(),
+          Text('gemini-3.5-flash',
+              style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF8892A4), fontSize: 9)),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A2E),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white12),
+              color: const Color(0xFFFBBF24).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(
+                  color: const Color(0xFFFBBF24).withOpacity(0.4)),
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _Dot(delay: 0),
-                SizedBox(width: 4),
-                _Dot(delay: 200),
-                SizedBox(width: 4),
-                _Dot(delay: 400),
-              ],
-            ),
+            child: Text('READY',
+                style: GoogleFonts.sourceCodePro(
+                    color: const Color(0xFFFBBF24),
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1)),
           ),
         ],
       ),
     );
   }
-}
 
-class _Dot extends StatefulWidget {
-  final int delay;
-  const _Dot({required this.delay});
-
-  @override
-  State<_Dot> createState() => _DotState();
-}
-
-class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
+  Widget _buildChatList() {
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      itemCount: _messages.length + (_isLoading ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == _messages.length) {
+          return _buildTypingIndicator();
+        }
+        final msg = _messages[index];
+        return msg['role'] == 'user'
+            ? _buildUserBubble(msg['content']!)
+            : _buildAssistantBubble(msg);
+      },
     );
-    Future.delayed(Duration(milliseconds: widget.delay), () {
-      if (mounted) _ctrl.repeat(reverse: true);
-    });
-    _anim = Tween(begin: 0.3, end: 1.0).animate(_ctrl);
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _anim,
+  Widget _buildUserBubble(String content) {
+    return Align(
+      alignment: Alignment.centerRight,
       child: Container(
-        width: 6,
-        height: 6,
-        decoration: const BoxDecoration(
-          color: Colors.white54,
-          shape: BoxShape.circle,
+        margin: const EdgeInsets.only(bottom: 8, left: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF3B82F6).withOpacity(0.2),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(12),
+            topRight: Radius.circular(4),
+            bottomLeft: Radius.circular(12),
+            bottomRight: Radius.circular(12),
+          ),
+          border: Border.all(
+              color: const Color(0xFF3B82F6).withOpacity(0.4)),
         ),
+        child: Text(content,
+            style: GoogleFonts.inter(
+                color: Colors.white, fontSize: 13, height: 1.4)),
+      ),
+    );
+  }
+
+  Widget _buildAssistantBubble(Map<String, String> msg) {
+    final isError = msg['error'] == 'true';
+    final context = msg['context'];
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8, right: 48),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0B1C30),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(4),
+            topRight: Radius.circular(12),
+            bottomLeft: Radius.circular(12),
+            bottomRight: Radius.circular(12),
+          ),
+          border: Border.all(
+            color: isError
+                ? const Color(0xFFF87171).withOpacity(0.4)
+                : const Color(0xFF1E2D45),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Agent label
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                          color: const Color(0xFF10B981).withOpacity(0.4)),
+                    ),
+                    child: const Icon(Icons.auto_awesome,
+                        color: Color(0xFF10B981), size: 10),
+                  ),
+                  const SizedBox(width: 6),
+                  Text('MINEOS AI',
+                      style: GoogleFonts.sourceCodePro(
+                          color: const Color(0xFF10B981),
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1)),
+                  if (context != null && context.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E2D45),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(context.toUpperCase(),
+                          style: GoogleFonts.sourceCodePro(
+                              color: const Color(0xFF8892A4),
+                              fontSize: 7,
+                              letterSpacing: 0.5)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: Text(msg['content']!,
+                  style: GoogleFonts.inter(
+                      color: isError
+                          ? const Color(0xFFF87171)
+                          : Colors.white,
+                      fontSize: 13,
+                      height: 1.5)),
+            ),
+            // Copy button
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(
+                    ClipboardData(text: msg['content']!));
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text('Disalin!',
+                        style: GoogleFonts.inter(fontSize: 12)),
+                    backgroundColor: const Color(0xFF0B1C30),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: const BoxDecoration(
+                  border: Border(
+                      top: BorderSide(color: Color(0xFF1E2D45))),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.copy,
+                        color: Color(0xFF8892A4), size: 11),
+                    const SizedBox(width: 4),
+                    Text('Salin',
+                        style: GoogleFonts.inter(
+                            color: const Color(0xFF8892A4), fontSize: 10)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8, right: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0B1C30),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF1E2D45)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.auto_awesome,
+                color: Color(0xFF10B981), size: 12),
+            const SizedBox(width: 8),
+            Text('AI sedang memproses...',
+                style: GoogleFonts.sourceCodePro(
+                    color: const Color(0xFF8892A4),
+                    fontSize: 10,
+                    letterSpacing: 0.5)),
+            const SizedBox(width: 8),
+            AnimatedBuilder(
+              animation: _typingController,
+              builder: (_, __) => Row(
+                children: List.generate(
+                    3,
+                    (i) => Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          width: 4,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Color.lerp(
+                              const Color(0xFF10B981),
+                              Colors.transparent,
+                              ((_typingController.value + i * 0.3) % 1.0),
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                        )),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickPrompts() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('QUICK QUERY',
+              style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF8892A4),
+                  fontSize: 8,
+                  letterSpacing: 1)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _quickPrompts
+                .map((p) => GestureDetector(
+                      onTap: () => _sendMessage(p),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0B1C30),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: const Color(0xFF3B82F6)
+                                  .withOpacity(0.3)),
+                        ),
+                        child: Text(p,
+                            style: GoogleFonts.inter(
+                                color: const Color(0xFF8892A4),
+                                fontSize: 11)),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0B1C30),
+        border: Border(top: BorderSide(color: Color(0xFF1E2D45))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF031427),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF1E2D45)),
+              ),
+              child: TextField(
+                controller: _controller,
+                style: GoogleFonts.inter(
+                    color: Colors.white, fontSize: 13),
+                maxLines: null,
+                decoration: InputDecoration(
+                  hintText: 'Tanya kondisi tambang...',
+                  hintStyle: GoogleFonts.inter(
+                      color: const Color(0xFF8892A4), fontSize: 13),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                ),
+                onSubmitted: _sendMessage,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _isLoading
+                ? null
+                : () => _sendMessage(_controller.text),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _isLoading
+                    ? const Color(0xFF1E2D45)
+                    : const Color(0xFF3B82F6).withOpacity(0.8),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _isLoading
+                      ? const Color(0xFF2D3F55)
+                      : const Color(0xFF3B82F6),
+                ),
+              ),
+              child: Icon(
+                _isLoading ? Icons.hourglass_empty : Icons.send,
+                color: _isLoading
+                    ? const Color(0xFF8892A4)
+                    : Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

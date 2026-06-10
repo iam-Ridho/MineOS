@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "966971616133",
+    "project_id": "mineos-c79b2",
+    "storage_bucket": "mineos-c79b2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:966971616133:android:193a0f0358b0970090f2ec",
+        "android_client_info": {
+          "package_name": "com.politani.mineos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD39DQxkC27QkKJuxClcVWDcP-7FXbsf0A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

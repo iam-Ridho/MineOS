@@ -1,295 +1,495 @@
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../providers/alerts_provider.dart';
+import '../../../shared/models/alert.dart';
 
-class AlertCenterScreen extends StatefulWidget {
+class AlertCenterScreen extends ConsumerWidget {
   const AlertCenterScreen({super.key});
 
   @override
-  State<AlertCenterScreen> createState() => _AlertCenterScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alertsAsync = ref.watch(alertsProvider);
 
-class _AlertCenterScreenState extends State<AlertCenterScreen> {
-  final _random = Random();
-  Timer? _timer;
-
-  final List<Map<String, dynamic>> _alerts = [
-    {
-      'id': '1',
-      'severity': 'red',
-      'message': 'Fatigue operator Andi Wijaya mencapai 80%!',
-      'vehicle': 'DT-002',
-      'time': DateTime.now().subtract(const Duration(minutes: 5)),
-      'acknowledged': false,
-    },
-    {
-      'id': '2',
-      'severity': 'red',
-      'message': 'BBM DT-003 kritis — hanya tersisa 20%!',
-      'vehicle': 'DT-003',
-      'time': DateTime.now().subtract(const Duration(minutes: 12)),
-      'acknowledged': false,
-    },
-    {
-      'id': '3',
-      'severity': 'yellow',
-      'message': 'Kecepatan DT-001 melebihi batas zona Pit A',
-      'vehicle': 'DT-001',
-      'time': DateTime.now().subtract(const Duration(minutes: 20)),
-      'acknowledged': true,
-    },
-  ];
-
-  // Template alert simulasi
-  final List<Map<String, dynamic>> _alertTemplates = [
-    {'severity': 'red', 'message': 'Fatigue operator mencapai batas kritis!', 'vehicle': 'DT-002'},
-    {'severity': 'yellow', 'message': 'BBM mulai menipis, segera isi ulang', 'vehicle': 'DT-001'},
-    {'severity': 'red', 'message': 'Kendaraan keluar dari zona operasional!', 'vehicle': 'DT-003'},
-    {'severity': 'yellow', 'message': 'Kecepatan melebihi batas yang ditentukan', 'vehicle': 'EX-001'},
-    {'severity': 'green', 'message': 'Kendaraan kembali ke zona normal', 'vehicle': 'DT-001'},
-    {'severity': 'red', 'message': 'Sensor getaran abnormal terdeteksi!', 'vehicle': 'EX-001'},
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    // Simulasi alert masuk tiap 10-15 detik
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
-      final template = _alertTemplates[_random.nextInt(_alertTemplates.length)];
-      setState(() {
-        _alerts.insert(0, {
-          'id': DateTime.now().millisecondsSinceEpoch.toString(),
-          'severity': template['severity'],
-          'message': template['message'],
-          'vehicle': template['vehicle'],
-          'time': DateTime.now(),
-          'acknowledged': false,
-        });
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  Color _getColor(String severity) {
-    switch (severity) {
-      case 'red': return Colors.red.shade700;
-      case 'yellow': return Colors.amber.shade600;
-      default: return Colors.green.shade600;
-    }
-  }
-
-  IconData _getIcon(String severity) {
-    switch (severity) {
-      case 'red': return Icons.dangerous;
-      case 'yellow': return Icons.warning_amber;
-      default: return Icons.check_circle;
-    }
-  }
-
-  String _formatTime(DateTime time) {
-    final diff = DateTime.now().difference(time);
-    if (diff.inMinutes < 1) return 'Baru saja';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} menit lalu';
-    return '${diff.inHours} jam lalu';
-  }
-
-  void _acknowledge(String id) {
-    setState(() {
-      final alert = _alerts.firstWhere((a) => a['id'] == id);
-      alert['acknowledged'] = true;
-    });
-  }
-
-  int get _unacknowledgedCount =>
-      _alerts.where((a) => !a['acknowledged']).length;
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1A237E),
-        title: Row(
+      backgroundColor: const Color(0xFF031427),
+      body: SafeArea(
+        child: Column(
           children: [
-            const Text('Alert Center',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
-            const SizedBox(width: 8),
-            if (_unacknowledgedCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(12),
+            _buildHeader(alertsAsync),
+            _buildOrchestrationStatus(),
+            Expanded(
+              child: alertsAsync.when(
+                data: (alerts) => _buildBody(context, ref, alerts),
+                loading: () => const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF3B82F6)),
                 ),
-                child: Text(
-                  '$_unacknowledgedCount',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold),
+                error: (e, _) => Center(
+                  child: Text('Error: $e',
+                      style: const TextStyle(color: Color(0xFFF87171))),
                 ),
               ),
+            ),
           ],
         ),
-        actions: [
-          // Acknowledge all button
-          if (_unacknowledgedCount > 0)
-            TextButton.icon(
-              onPressed: () {
-                setState(() {
-                  for (var a in _alerts) {
-                    a['acknowledged'] = true;
-                  }
-                });
-              },
-              icon: const Icon(Icons.done_all, color: Colors.white70, size: 18),
-              label: const Text('Semua',
-                  style: TextStyle(color: Colors.white70, fontSize: 12)),
+      ),
+    );
+  }
+
+  Widget _buildHeader(AsyncValue alertsAsync) {
+    final unacked = alertsAsync.maybeWhen(
+      data: (alerts) =>
+          (alerts as List<Alert>).where((a) => !a.acknowledged).length,
+      orElse: () => 0,
+    );
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF031427),
+        border: Border(bottom: BorderSide(color: Color(0xFF1E2D45))),
+      ),
+      child: Row(
+        children: [
+          Text(
+            'MineOS',
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Agent Monitor',
+            style: GoogleFonts.inter(
+              color: const Color(0xFF3B82F6),
+              fontSize: 20,
+              fontWeight: FontWeight.w300,
+            ),
+          ),
+          const Spacer(),
+          if (unacked > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF87171).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                    color: const Color(0xFFF87171).withOpacity(0.5)),
+              ),
+              child: Text(
+                '$unacked UNACKED',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFFF87171),
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
             ),
         ],
       ),
-      body: Column(
+    );
+  }
+
+  Widget _buildOrchestrationStatus() {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1C30),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+            color: const Color(0xFF10B981).withOpacity(0.3)),
+      ),
+      child: Row(
         children: [
-          // Summary bar
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'LANGGRAPH ORCHESTRATION',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF8892A4),
+                  fontSize: 8,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '4/4 NODE AKTIF',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF10B981),
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'LATENCY',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF8892A4),
+                  fontSize: 8,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '22ms',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF10B981),
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: const Color(0xFF1A1A2E),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                  color: const Color(0xFF10B981).withOpacity(0.4)),
+            ),
+            child: Text(
+              'LIVE HUD',
+              style: GoogleFonts.sourceCodePro(
+                color: const Color(0xFF10B981),
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(
+      BuildContext context, WidgetRef ref, List<Alert> alerts) {
+    final kritisCount =
+        alerts.where((a) => a.severity == 'KRITIS' && !a.acknowledged).length;
+    final waspadaCount =
+        alerts.where((a) => a.severity == 'WASPADA' && !a.acknowledged).length;
+
+    return Column(
+      children: [
+        // Summary bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: const Color(0xFF0B1C30),
+          child: Row(
+            children: [
+              _SummaryChip(
+                  color: const Color(0xFFF87171),
+                  label: 'KRITIS',
+                  count: kritisCount),
+              const SizedBox(width: 8),
+              _SummaryChip(
+                  color: const Color(0xFFFBBF24),
+                  label: 'WASPADA',
+                  count: waspadaCount),
+              const Spacer(),
+              Consumer(
+                builder: (context, ref, _) {
+                  final unacked =
+                      alerts.where((a) => !a.acknowledged).length;
+                  if (unacked == 0) return const SizedBox();
+                  return GestureDetector(
+                    onTap: () async {
+                      final service = ref.read(acknowledgeAlertProvider);
+                      for (final alert
+                          in alerts.where((a) => !a.acknowledged)) {
+                        await service.acknowledge(alert.id);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E2D45),
+                        borderRadius: BorderRadius.circular(4),
+                        border:
+                            Border.all(color: const Color(0xFF2D3F55)),
+                      ),
+                      child: Text(
+                        'ACK ALL',
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF8892A4),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+
+        // Alert list
+        Expanded(
+          child: alerts.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle_outline,
+                          color: Color(0xFF10B981), size: 48),
+                      const SizedBox(height: 12),
+                      Text(
+                        'SEMUA SISTEM NOMINAL',
+                        style: GoogleFonts.sourceCodePro(
+                          color: const Color(0xFF10B981),
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tidak ada alert aktif',
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF8892A4),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: alerts.length,
+                  itemBuilder: (context, index) => _AlertCard(
+                    alert: alerts[index],
+                    onAcknowledge: () async {
+                      final service = ref.read(acknowledgeAlertProvider);
+                      await service.acknowledge(alerts[index].id);
+                    },
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AlertCard extends StatelessWidget {
+  final Alert alert;
+  final VoidCallback onAcknowledge;
+  const _AlertCard({required this.alert, required this.onAcknowledge});
+
+  Color get _color {
+    switch (alert.severity) {
+      case 'KRITIS': return const Color(0xFFF87171);
+      case 'WASPADA': return const Color(0xFFFBBF24);
+      default: return const Color(0xFF10B981);
+    }
+  }
+
+  String _formatTime(String? timestamp) {
+    if (timestamp == null) return '';
+    final time = DateTime.tryParse(timestamp);
+    if (time == null) return '';
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'Baru saja';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m lalu';
+    if (diff.inHours < 24) return '${diff.inHours}h lalu';
+    return '${diff.inDays}d lalu';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1C30),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: alert.acknowledged
+              ? const Color(0xFF1E2D45)
+              : _color.withOpacity(0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
             child: Row(
               children: [
-                _SummaryChip(
-                  color: Colors.red,
-                  label: 'Kritis',
-                  count: _alerts
-                      .where((a) => a['severity'] == 'red' && !a['acknowledged'])
-                      .length,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(color: _color.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        alert.severity == 'KRITIS'
+                            ? Icons.dangerous
+                            : alert.severity == 'WASPADA'
+                                ? Icons.warning_amber
+                                : Icons.check_circle,
+                        color: _color,
+                        size: 10,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        alert.severity,
+                        style: GoogleFonts.inter(
+                          color: _color,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 8),
-                _SummaryChip(
-                  color: Colors.amber,
-                  label: 'Warning',
-                  count: _alerts
-                      .where((a) => a['severity'] == 'yellow' && !a['acknowledged'])
-                      .length,
-                ),
-                const SizedBox(width: 8),
-                _SummaryChip(
-                  color: Colors.green,
-                  label: 'Normal',
-                  count: _alerts
-                      .where((a) => a['severity'] == 'green' && !a['acknowledged'])
-                      .length,
-                ),
+                if (alert.vehicleId != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    alert.vehicleId!,
+                    style: GoogleFonts.sourceCodePro(
+                      color: const Color(0xFF8892A4),
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
                 const Spacer(),
                 Text(
-                  'Total: ${_alerts.length} alert',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  _formatTime(alert.createdAt),
+                  style: GoogleFonts.sourceCodePro(
+                    color: const Color(0xFF8892A4),
+                    fontSize: 9,
+                  ),
                 ),
               ],
             ),
           ),
-          // Alert list
-          Expanded(
-            child: _alerts.isEmpty
-                ? const Center(
-                    child: Text('Tidak ada alert',
-                        style: TextStyle(color: Colors.white38)))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _alerts.length,
-                    itemBuilder: (context, index) {
-                      final alert = _alerts[index];
-                      final color = _getColor(alert['severity']);
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        margin: const EdgeInsets.only(bottom: 10),
-                        decoration: BoxDecoration(
-                          color: alert['acknowledged']
-                              ? const Color(0xFF1A1A2E)
-                              : color.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: alert['acknowledged']
-                                ? Colors.white12
-                                : color.withOpacity(0.5),
-                          ),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          leading: CircleAvatar(
-                            backgroundColor: alert['acknowledged']
-                                ? Colors.white12
-                                : color,
-                            child: Icon(
-                              alert['acknowledged']
-                                  ? Icons.check
-                                  : _getIcon(alert['severity']),
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                          title: Text(
-                            alert['message'],
-                            style: TextStyle(
-                              color: alert['acknowledged']
-                                  ? Colors.white38
-                                  : Colors.white,
-                              fontSize: 13,
-                              fontWeight: alert['acknowledged']
-                                  ? FontWeight.normal
-                                  : FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Row(
-                              children: [
-                                Icon(Icons.local_shipping,
-                                    color: Colors.white38, size: 12),
-                                const SizedBox(width: 4),
-                                Text(alert['vehicle'],
-                                    style: const TextStyle(
-                                        color: Colors.white38, fontSize: 11)),
-                                const SizedBox(width: 12),
-                                Icon(Icons.access_time,
-                                    color: Colors.white38, size: 12),
-                                const SizedBox(width: 4),
-                                Text(_formatTime(alert['time']),
-                                    style: const TextStyle(
-                                        color: Colors.white38, fontSize: 11)),
-                              ],
-                            ),
-                          ),
-                          trailing: alert['acknowledged']
-                              ? const Icon(Icons.check_circle,
-                                  color: Colors.green, size: 20)
-                              : ElevatedButton(
-                                  onPressed: () => _acknowledge(alert['id']),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: color,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: const Text('ACK',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold)),
-                                ),
-                        ),
-                      );
-                    },
-                  ),
+
+          // Message
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Text(
+              alert.message,
+              style: GoogleFonts.inter(
+                color: alert.acknowledged
+                    ? const Color(0xFF8892A4)
+                    : Colors.white,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
           ),
+
+          // Action
+          if (!alert.acknowledged)
+            Container(
+              decoration: BoxDecoration(
+                border: Border(
+                    top: BorderSide(color: _color.withOpacity(0.2))),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: onAcknowledge,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _color.withOpacity(0.1),
+                          borderRadius: const BorderRadius.only(
+                            bottomLeft: Radius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          'ACKNOWLEDGE',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            color: _color,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 36,
+                    color: _color.withOpacity(0.2),
+                  ),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: const BoxDecoration(
+                        borderRadius: BorderRadius.only(
+                          bottomRight: Radius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        'ABAIKAN',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF8892A4),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: const BoxDecoration(
+                border: Border(
+                    top: BorderSide(color: Color(0xFF1E2D45))),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(8),
+                  bottomRight: Radius.circular(8),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check_circle,
+                      color: Color(0xFF10B981), size: 12),
+                  const SizedBox(width: 6),
+                  Text(
+                    'ACKNOWLEDGED',
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFF10B981),
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -308,27 +508,31 @@ class _SummaryChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: count > 0 ? color.withOpacity(0.2) : Colors.white10,
-        borderRadius: BorderRadius.circular(20),
+        color: count > 0 ? color.withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
         border: Border.all(
-            color: count > 0 ? color.withOpacity(0.5) : Colors.white12),
+            color: count > 0 ? color.withOpacity(0.4) : const Color(0xFF1E2D45)),
       ),
       child: Row(
         children: [
-          CircleAvatar(
-              backgroundColor: count > 0 ? color : Colors.white24,
-              radius: 6,
-              child: Text('$count',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold))),
+          Text(
+            '$count',
+            style: GoogleFonts.sourceCodePro(
+              color: count > 0 ? color : const Color(0xFF8892A4),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(
-                  color: count > 0 ? color : Colors.white38,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: count > 0 ? color : const Color(0xFF8892A4),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
         ],
       ),
     );
