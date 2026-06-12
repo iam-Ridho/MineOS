@@ -2,8 +2,10 @@ from pydantic_settings import BaseSettings
 from typing import List
 
 class Settings(BaseSettings):
-    # Gemini
+    # LLM API KEY
     gemini_api_key: str
+    groq_api_key: str
+    openrouter_api_key: str
     
     # Supabase
     supabase_url: str
@@ -24,7 +26,7 @@ class Settings(BaseSettings):
 
     # LangGraph
     agent_timeout_seconds: int = 10
-    agent_cycle_seconds: int = 30
+    agent_cycle_seconds: int = 300
 
     class Config: 
         env_file = ".env"

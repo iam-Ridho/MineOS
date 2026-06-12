@@ -13,7 +13,7 @@ class AckRequest(BaseModel):
 @router.post("/alerts/acknowledged")
 async def acknowledged_alert(req: AckRequest, user=Depends(auth)):
     r = (
-        supabase_admin.table("alert")
+        supabase_admin.table("alerts")
         .update({
             "acknowledged":    True,
             "acknowledged_by": req.acknowledged_by,
@@ -28,7 +28,7 @@ async def acknowledged_alert(req: AckRequest, user=Depends(auth)):
     return {"success": True, "alert": r.data[0]}
 
 @router.get("/alerts/active")
-async def get_active_alerts(limit: int = 50,user=Depends(auth)):
+async def get_active_alerts(limit: int = 50, user=Depends(auth)):
     r = (
         supabase_admin.table("alerts")
         .select("*")

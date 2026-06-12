@@ -7,7 +7,8 @@ from app.agents.safety_agent import SafetyAgent
 from app.agents.emission_agent import EmissionAgent
 from app.agents.reclamation_agent import ReclamationAgent
 
-from app.orchestrator.gemini_engine import gemini_orchestrator
+# from app.orchestrator.gemini_engine import gemini_orchestrator
+from app.orchestrator.multi_provider import gemini_orchestrator
 
 from app.config import settings
 

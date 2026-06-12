@@ -14,7 +14,7 @@ class FleetAgent(BaseAgent):
         active = [v for v in haulers if v["speed_kmh"] > 0]
         stopped = [v for v in haulers if v["speed_kmh"] == 0]
         low_fuel = [v for v in pos if v.get("fuel_pct", 100) < self.FUEL_ALERT]
-        speeding = [v for v in pos if v["speed_kmh"] > self.SPEED_MAX]
+        speeding = [v for v in haulers if v["speed_kmh"] > self.SPEED_MAX]
 
         avg_spd = round(sum(v["speed_kmh"] for v in active) / max(len(active), 1), 1)
         tot_load = round(sum(v.get("load_weight_ton", 0) for v in haulers), 1)

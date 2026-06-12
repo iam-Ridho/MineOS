@@ -8,11 +8,14 @@ _initialized = False
 
 def _init_firebase():
     global _initialized
-    if not _initialized:
+    
+    if _initialized:
         return True
+    
     if not os.path.exists(settings.firebase_credentials_path):
-        print("firebase-credentials.json tidak ditemukan — FCM dinonaktifkan")
+        print("firebase-credentials.json tidak ditemukan - FCM dinonaktifkan")
         return False
+    
     cred = credentials.Certificate(settings.firebase_credentials_path)
     firebase_admin.initialize_app(cred)
     _initialized = True
@@ -24,6 +27,7 @@ async def send_alert_notification(title: str, body: str, severity: str):
         return
 
     topic = f"mineos-{severity.lower()}"
+    
     message = messaging.Message(
         notification=messaging.Notification(
             title=title,
@@ -38,12 +42,11 @@ async def send_alert_notification(title: str, body: str, severity: str):
         topic=topic,
         android=messaging.AndroidConfig(priority="high"),
         apns=messaging.APNSConfig(headers={"apns-priority": "10"})
-    ),
+    )
 
     try:
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, messaging.send, message)
-        print(f"[FCM] Terkirim → topic={topic} · id={response}")
+        print(f"[FCM] Terkirim -> topic={topic} · id={response}")
     except Exception as e:
         print(f"[FCM] Error: {e}")
-        

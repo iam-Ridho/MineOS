@@ -6,6 +6,15 @@ from unittest.mock import MagicMock, patch
 client = TestClient(app)
 app.dependency_overrides[deps.get_current_user_demo] = lambda: {"sub": "test"}
 
+# Mock Redis agar unit test bisa jalan tanpa local Redis
+class MockRedis:
+    async def get(self, key: str):
+        return None
+    async def setex(self, key: str, time: int, value: str):
+        return True
+
+app.dependency_overrides[deps.get_redis] = lambda: MockRedis()
+
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200

@@ -14,14 +14,23 @@ async def get_agents_status(user=Depends(auth)):
         .limit(1)
         .execute()
     )
+
+    last_decision = last.data[0] if last.data else None
+
+    # Ambil llm_engine dari data real, fallback ke default
+    llm_engine = "gemini-3.5-flash"
+    if last_decision and last_decision.get("llm_engine"):
+        llm_engine = last_decision["llm_engine"]
+
     return {
         "agents": [
-            {"name": "Fleet Management Agent", "domain": "fleet"},
-            {"name": "Safety K3 Agent",        "domain": "safety"},
-            {"name": "Emission Agent",          "domain": "emission"},
-            {"name": "Reclamation Agent",       "domain": "reclamation"},
+            {"name":"Fleet Management Agent", "domain": "fleet"},
+            {"name":"Safety K3 Agent", "domain": "safety"},
+            {"name":"Emission Agent", "domain": "emission"},
+            {"name":"Reclamation Agent", "domain": "reclamation"},
         ],
-        "last_decision":          last.data[0] if last.data else None,
+        "last_decision": last_decision,
         "cycle_interval_seconds": settings.agent_cycle_seconds,
-        "llm_engine":             "gemini-3.5-flash",
+        "llm_engine": llm_engine,
+        "source": "supabase:ai_decisions" if last_decision else "default",
     }

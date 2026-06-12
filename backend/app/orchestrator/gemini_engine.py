@@ -38,10 +38,14 @@ class GeminiOrchestrator:
 
         except Exception as e:
             print(f"[Gemini] Error: {e}")
+
+            max_priority = max(r["priority"] for r in agent_reports)
+            worst_status = next(r["status"] for r in agent_reports if r["priority"] == max_priority)
+            
             return {
-                "decision_text":  f"[NORMAL] Sistem beroperasi. ({str(e)[:80]})",
-                "priority_level": "NORMAL",
-                "engine":         "fallback",
+                "decision_text": f"[{worst_status}] Sistem beroperasi dengan {len(agent_reports)} agent aktif. (LLM offline)",
+                "priority_level": worst_status,
+                "engine": "fallback-agent-direct",
             }
 
 
