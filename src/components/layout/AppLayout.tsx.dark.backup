@@ -1,0 +1,55 @@
+"use client";
+
+import { useState } from "react";
+import Navbar from "./Navbar";
+import Sidebar from "./Sidebar";
+import { useTelemetry } from "@/context/TelemetryContext";
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { emergencyStop, wsConnected } = useTelemetry();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const toggleSidebar = () => setSidebarOpen((prev) => !prev);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans select-none overflow-hidden relative">
+      <Navbar onToggleSidebar={toggleSidebar} sidebarOpen={sidebarOpen} />
+
+      <div className="flex flex-1 pt-16">
+        <Sidebar isOpen={sidebarOpen} />
+
+        <main
+          className={`flex-1 h-[calc(100vh-4rem)] flex flex-col relative bg-slate-50 overflow-hidden pb-9 transition-all duration-300 ease-in-out ${
+            sidebarOpen ? "ml-64" : "ml-0"
+          }`}
+        >
+          {emergencyStop && (
+            <div className="absolute top-0 inset-x-0 z-50 bg-red-50 text-red-600 px-6 py-2.5 font-mono text-xs uppercase tracking-widest text-center animate-pulse font-extrabold flex items-center justify-center gap-3 shadow-2xl border-b border-red-200">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+              EMERGENCY SYSTEM LOCK ACTIVE — ALL VEHICLE NODES SUSPENDED & IDLED
+            </div>
+          )}
+
+          {children}
+        </main>
+      </div>
+
+      <footer className="fixed bottom-0 left-0 right-0 h-10 bg-white border-t border-slate-200 flex justify-between items-center px-6 text-[10px] font-mono text-slate-500 z-50 select-none">
+        <div className="flex gap-8">
+          <div className="flex items-center gap-2">
+            <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500 animate-pulse"}`}></span>
+            <span className="uppercase text-slate-600 font-bold">
+              Telemetry Status: <span className={wsConnected ? "text-emerald-600" : "text-amber-600"}>{wsConnected ? "Syncing (WS-Secured)" : "Syncing (Fallback)"}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-600">
+            <span className="font-bold text-slate-400">REGION:</span> PACIFIC-NORTH
+          </div>
+        </div>
+        <div className="text-[10px] text-slate-400 font-mono tracking-wider">
+          &copy; 2026 Geospatial Analysis Node v4.0. ALL RIGHTS RESERVED.
+        </div>
+      </footer>
+    </div>
+  );
+}
