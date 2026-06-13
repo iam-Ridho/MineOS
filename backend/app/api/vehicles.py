@@ -112,6 +112,75 @@ async def get_vehicle_positions_from_db(
         "vehicles": latest,
     }
 
+@router.get("/vehicles/{vehicle_id}")
+async def get_vehicle_detail(vehicle_id: str, user=Depends(auth)):
+    """Detail kendaraan dari data realtime."""
+    
+    pos_result = supabase_admin.table("vehicle_positions").select("*").eq("vehicle_id", vehicle_id).order("timestamp", desc=True).limit(1).execute()
+    
+    if not pos_result.data:
+        raise HTTPException(status_code=404, detail=f"Vehicle {vehicle_id} not found")
+    
+    position = pos_result.data[0]
+    
+    emission_result = supabase_admin.table("emission_logs").select(
+        "co2_kg, fuel_consumed_liter, distance_km"
+    ).eq("vehicle_id", vehicle_id).order("timestamp", desc=True).limit(1).execute()
+    emission = emission_result.data[0] if emission_result.data else {}
+    
+    fatigue_result = supabase_admin.table("operator_fatigue").select(
+        "operator_name, fatigue_score, shift_hours, heart_rate"
+    ).eq("vehicle_id", vehicle_id).order("timestamp", desc=True).limit(1).execute()
+    fatigue = fatigue_result.data[0] if fatigue_result.data else {}
+    
+    prefix = vehicle_id.split("-")[0].upper()
+    type_map = {
+        "HD": {"type": "Haul Truck", "capacity": 90},
+        "CAT": {"type": "Excavator", "capacity": 0},
+        "EX": {"type": "Excavator", "capacity": 0},
+        "WT": {"type": "Water Truck", "capacity": 20},
+        "DZ": {"type": "Dozer", "capacity": 0},
+    }
+    vtype = type_map.get(prefix, {"type": "Unknown", "capacity": 0})
+    
+    return {
+        "vehicle_id": vehicle_id,
+        "vehicle_type": vtype["type"],
+        "capacity_ton": vtype["capacity"],
+        
+        "position": {
+            "latitude": position.get("latitude"),
+            "longitude": position.get("longitude"),
+            "speed_kmh": position.get("speed_kmh"),
+            "heading_deg": position.get("heading_deg"),
+            "fuel_pct": position.get("fuel_pct"),
+            "load_weight_ton": position.get("load_weight_ton"),
+            "zone": position.get("zone"),
+            "timestamp": position.get("timestamp"),
+        },
+        
+        "operator": {
+            "name": fatigue.get("operator_name", position.get("operator_name", "Unknown")),
+            "fatigue_score": fatigue.get("fatigue_score", 0),
+            "shift_hours": fatigue.get("shift_hours", 0),
+            "heart_rate": fatigue.get("heart_rate", 0),
+        },
+        
+        "emission": {
+            "co2_kg": emission.get("co2_kg", 0),
+            "fuel_consumed_liter": emission.get("fuel_consumed_liter", 0),
+            "distance_km": emission.get("distance_km", 0),
+        },
+        
+        "status": {
+            "is_active": position.get("speed_kmh", 0) > 0,
+            "is_low_fuel": position.get("fuel_pct", 100) < 25,
+            "is_speeding": position.get("speed_kmh", 0) > 35,
+        },
+        
+        "source": "supabase:realtime"
+    }
+
 
 @router.get("/vehicles/master")
 async def get_vehicles_master(user=Depends(auth)):
