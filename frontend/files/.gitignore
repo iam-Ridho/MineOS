@@ -1,0 +1,41 @@
+# Dependency directories
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Production
+build/
+
+# Local env files
+.env*
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Lock files if you don't want them in git
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
