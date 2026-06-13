@@ -1,0 +1,6 @@
+{
+  "/digital-twin/page": "app/digital-twin/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/analytics/page": "app/analytics/page.js",
+  "/agents/page": "app/agents/page.js"
+}
