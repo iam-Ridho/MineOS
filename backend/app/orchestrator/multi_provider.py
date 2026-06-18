@@ -10,9 +10,12 @@ class MultiProviderOrchestrator:
     GEMINI_MODEL = "gemini-3.5-flash"
     GROQ_MODEL = "llama-3.1-8b-instant"
     OPENROUTER_MODEL = [
-        "qwen/qwen-2.5-7b-instruct",
-        "meta-llama/llama-3.3-70b-instruct",
-        "deepseek/deepseek-chat"
+        # "qwen/qwen-2.5-7b-instruct",
+        # "meta-llama/llama-3.3-70b-instruct",
+        # "deepseek/deepseek-chat"
+        "openai/gpt-oss-120b:free",
+        "google/gemini-2.5-flash-preview:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
     ]
 
     def __init__(self):

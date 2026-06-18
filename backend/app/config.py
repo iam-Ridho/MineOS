@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # LangGraph
     agent_timeout_seconds: int = 10
-    agent_cycle_seconds: int = 300
+    agent_cycle_seconds: int = 5
 
     class Config: 
         env_file = ".env"

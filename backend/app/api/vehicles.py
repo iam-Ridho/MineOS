@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from app.deps import get_current_user_demo as auth, get_redis
 from app.simulator.vehicle_simulator import generate_vehicle_positions
 from app.realtime.broadcaster import get_current_scenario

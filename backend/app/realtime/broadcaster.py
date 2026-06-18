@@ -14,6 +14,10 @@ from app.config import settings
 _scenario = "normal"
 _is_running = False
 
+# Interval khusus untuk update posisi kendaraan (real-time movement)
+VEHICLE_POSITION_INTERVAL = 1.5  # detik, <2s sesuai PRD G-03/F-04
+
+
 def set_scenario(s: str):
     global _scenario
     if s in {"normal", "storm", "fatigue", "incident"}:
@@ -21,34 +25,36 @@ def set_scenario(s: str):
     else:
         print(f"[Broadcaster] Scenario tidak valid: {s}")
 
+
 def get_current_scenario() -> str:
     return _scenario
 
 
-async def broadcast_loop():
+# ─────────────────────────────────────────────
+# LOOP 1: Posisi Kendaraan (cepat, real-time)
+# ─────────────────────────────────────────────
+async def vehicle_position_loop():
+    """
+    Broadcast posisi kendaraan setiap ~1.5 detik.
+    Ringan — tidak ada LLM call, hanya generate + insert.
+    Memenuhi G-03/F-04: update posisi <2 detik via WebSocket.
+    """
     global _is_running
-    _is_running = True
 
     while _is_running:
+        # ✅ FIX: Ukur waktu eksekusi dan kompensasi di sleep berikutnya.
+        # asyncio.sleep(1.5) tidak akurat karena tidak memperhitungkan
+        # waktu insert ke Supabase. Tanpa kompensasi, interval nyata bisa
+        # 1.5s + 200ms = 1.7s, lalu frontend mengukur duration yang lebih
+        # panjang dari yang sebenarnya dan animasi terasa patah-patah.
+        loop_start = asyncio.get_event_loop().time()
+
         try:
             scenario = _scenario
-            now = datetime.now()
-            now_iso = now.isoformat()
+            positions = generate_vehicle_positions(
+                scenario, interval_seconds=VEHICLE_POSITION_INTERVAL
+            )
 
-            # 1. Generate Data Simulasi
-            raw = {
-                "vehicle_positions": generate_vehicle_positions(scenario),
-                "operator_fatigue": generate_operator_fatigue(scenario),
-                "environment_sensor": generate_environment_sensor(scenario),
-                "reclamation_status": generate_reclamation_status(),
-            }
-
-            # 2. Jalankan 4 agent + gemini orchestrator
-            result = await run_full_cycle(raw)
-            reports = result["agent_reports"]
-            decision = result["orchestrator_decision"]
-
-            # 3. Insert vehicle_positions -> trigger supabase realtime
             supabase_admin.table("vehicle_positions").insert([
                 {
                     "vehicle_id": v["vehicle_id"],
@@ -61,8 +67,56 @@ async def broadcast_loop():
                     "zone": v["zone"],
                     "operator_name": v["operator_name"],
                 }
-                for v in raw["vehicle_positions"]
+                for v in positions
             ]).execute()
+
+        except Exception as e:
+            print(f"[VehiclePositionLoop] Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Kompensasi: kurangi waktu yang sudah terpakai dari interval target
+        elapsed = asyncio.get_event_loop().time() - loop_start
+        sleep_time = max(0, VEHICLE_POSITION_INTERVAL - elapsed)
+        await asyncio.sleep(sleep_time)
+
+
+# ─────────────────────────────────────────────
+# LOOP 2: AI Agent + Orchestrator (lambat, berat)
+# ─────────────────────────────────────────────
+async def agent_decision_loop():
+    """
+    Jalankan 4 AI agent + LLM orchestrator setiap agent_cycle_seconds.
+    Insert ai_decisions, alerts, production_snapshots, sensor data, dll.
+    """
+    global _is_running
+
+    while _is_running:
+        try:
+            scenario = _scenario
+            now = datetime.now()
+            now_iso = now.isoformat()
+            interval = settings.agent_cycle_seconds  # 5 detik
+
+            # 1. Generate data simulasi sensor (vehicle_positions diambil terpisah
+            #    untuk konsistensi input agent — pakai snapshot posisi terkini)
+            # ✅ FIX: Jangan panggil generate_vehicle_positions di sini.
+            # generate_vehicle_positions() menggerakkan _last_positions (state global simulator).
+            # Kalau dipanggil di sini dengan interval_seconds=5, posisi akan "loncat"
+            # sejauh 5 detik perjalanan padahal vehicle_position_loop baru jalan 1.5 detik.
+            # Solusi: ambil snapshot posisi terkini dari _last_positions langsung.
+            from app.simulator.vehicle_simulator import get_all_current_positions
+            raw = {
+                "vehicle_positions": get_all_current_positions(),
+                "operator_fatigue": generate_operator_fatigue(scenario),
+                "environment_sensor": generate_environment_sensor(scenario),
+                "reclamation_status": generate_reclamation_status(),
+            }
+
+            # 2. Jalankan 4 agent + LLM orchestrator
+            result = await run_full_cycle(raw)
+            reports = result["agent_reports"]
+            decision = result["orchestrator_decision"]
 
             # 3b. Insert operator_fatigue -> trigger supabase realtime
             supabase_admin.table("operator_fatigue").insert([
@@ -97,7 +151,7 @@ async def broadcast_loop():
                         "vehicle_id": v["vehicle_id"],
                         "co2_kg": v.get("co2_estimate_kg", 0),
                         "fuel_consumed_liter": v["fuel_consumed_liter"],
-                        "distance_km": round(v["speed_kmh"] * (settings.agent_cycle_seconds / 3600), 2),
+                        "distance_km": round(v["speed_kmh"] * (interval / 3600), 2),
                         "load_ton": v["load_weight_ton"],
                         "zone": v["zone"],
                         "timestamp": now_iso,
@@ -173,27 +227,33 @@ async def broadcast_loop():
                         severity=r["status"]
                     )
 
-            # 7. Trim Data lama agar DB tidak penuh
-            cutoff = (now - timedelta(hours=24)).isoformat()
-            supabase_admin.table("vehicle_positions").delete().lt("timestamp", cutoff).execute()
-            supabase_admin.table("operator_fatigue").delete().lt("timestamp", cutoff).execute()
-            supabase_admin.table("environment_sensors").delete().lt("timestamp", cutoff).execute()
-            supabase_admin.table("emission_logs").delete().lt("timestamp", cutoff).execute()
-
             print(
-                f"[{now.strftime('%H:%M:%S')}] Broadcast OK - "
+                f"[{now.strftime('%H:%M:%S')}] Agent cycle OK - "
                 f"scenario={scenario} · {decision['priority_level']} · "
                 f"engine={decision.get('engine','?')} · "
-                f"vehicles={len(raw['vehicle_positions'])} · "
                 f"alerts={len([r for r in reports if r['priority'] >= 3])}"
             )
 
         except Exception as e:
-            print(f"Broadcaster Error: {e}")
+            print(f"[AgentDecisionLoop] Error: {e}")
             import traceback
             traceback.print_exc()
 
         await asyncio.sleep(settings.agent_cycle_seconds)
+
+
+# ─────────────────────────────────────────────
+# Entry point: jalankan kedua loop bersamaan
+# ─────────────────────────────────────────────
+async def broadcast_loop():
+    global _is_running
+    _is_running = True
+
+    await asyncio.gather(
+        vehicle_position_loop(),
+        agent_decision_loop(),
+    )
+
 
 async def stop_broadcast():
     global _is_running
