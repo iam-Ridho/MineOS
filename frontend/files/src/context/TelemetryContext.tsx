@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import {
   Vehicle,
   Agent,
@@ -35,6 +35,10 @@ interface TelemetryContextProps {
 
 const TelemetryContext = createContext<TelemetryContextProps | undefined>(undefined);
 
+// Backend WebSocket Anda (FastAPI) — bukan Next.js dev server (localhost:3000)
+const TELEMETRY_WS_URL =
+  process.env.NEXT_PUBLIC_TELEMETRY_WS_URL || "ws://localhost:8000/ws/telemetry";
+
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [emergencyStop, setEmergencyStop] = useState<boolean>(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([
@@ -52,6 +56,10 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     logicConsistency: 99.8
   });
   const [wsConnected, setWsConnected] = useState<boolean>(false);
+
+  // emergencyStop dibaca via ref agar tidak perlu masuk dependency useEffect
+  const emergencyStopRef = useRef(emergencyStop);
+  useEffect(() => { emergencyStopRef.current = emergencyStop; }, [emergencyStop]);
 
   const addAgentLog = (log: AgentLog) => {
     setAgents(prev => prev.map(ag => {
@@ -71,81 +79,147 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     setSystemMetrics(prev => ({ ...prev, inferenceLatency: 18, logicConsistency: 99.9 }));
   };
 
+  // useEffect(() => {
+  //   let ws: WebSocket | null = null;
+  //   let fallbackInterval: NodeJS.Timeout | null = null;
+  //   let reconnectTimeout: NodeJS.Timeout | null = null;
+  //   let cancelled = false;
+
+  //   const connect = () => {
+  //     if (cancelled) return;
+
+  //     try {
+  //       ws = new WebSocket(TELEMETRY_WS_URL);
+
+  //       ws.onopen = () => {
+  //         setWsConnected(true);
+  //         // Backend WS hidup -> hentikan fallback loop simulasi
+  //         if (fallbackInterval) {
+  //           clearInterval(fallbackInterval);
+  //           fallbackInterval = null;
+  //         }
+  //       };
+
+  //       ws.onmessage = (event) => {
+  //         try {
+  //           const packet = JSON.parse(event.data);
+  //           if (packet.type === "TELEMETRY") {
+  //             if (packet.vehicles) setVehicles(packet.vehicles);
+  //             if (packet.telemetryStream) setTelemetryStream(packet.telemetryStream);
+  //             if (packet.metrics) setSystemMetrics(packet.metrics);
+  //           }
+  //         } catch {}
+  //       };
+
+  //       ws.onerror = () => setWsConnected(false);
+
+  //       ws.onclose = () => {
+  //         setWsConnected(false);
+  //         if (cancelled) return;
+  //         startFallbackLoop();
+  //         // Coba reconnect ke backend WS setiap 5 detik
+  //         reconnectTimeout = setTimeout(connect, 5000);
+  //       };
+  //     } catch {
+  //       startFallbackLoop();
+  //       reconnectTimeout = setTimeout(connect, 5000);
+  //     }
+  //   };
+
+  //   function startFallbackLoop() {
+  //     if (fallbackInterval) return; // sudah jalan, jangan duplikat
+  //     fallbackInterval = setInterval(() => {
+  //       setVehicles(prev => prev.map(v => {
+  //         if (emergencyStopRef.current) return { ...v, speed: 0, state: "IDLE" };
+  //         let nextProgress = v.routeProgress;
+  //         let nextLat = v.lat;
+  //         let nextLon = v.lon;
+  //         let nextSpeed = v.speed;
+
+  //         if (v.state === "MOVING") {
+  //           nextProgress = v.routeProgress + 2;
+  //           if (nextProgress >= 100) nextProgress = 0;
+  //           nextLat = v.id === "HAUL-01" ? 28.349129 + (nextProgress * 0.00004) : 28.350320 - (nextProgress * 0.00003);
+  //           nextLon = v.id === "HAUL-01" ? 118.294102 + (nextProgress * 0.00003) : 118.294950 + (nextProgress * 0.00002);
+  //           nextSpeed = 31 + Math.random() * 4 - 2;
+  //         }
+  //         return {
+  //           ...v,
+  //           routeProgress: nextProgress,
+  //           lat: Number(nextLat.toFixed(6)),
+  //           lon: Number(nextLon.toFixed(6)),
+  //           speed: Number(nextSpeed.toFixed(1))
+  //         };
+  //       }));
+
+  //       setTelemetryStream(prev => prev.map(item => {
+  //         let change = (Math.random() - 0.5) * (item.value * 0.015);
+  //         return {
+  //           ...item,
+  //           timestamp: new Date().toLocaleTimeString(),
+  //           value: Number((item.value + change).toFixed(item.metric === "TPH" ? 0 : 1))
+  //         };
+  //       }));
+
+  //       setSystemMetrics(prev => ({ ...prev, inferenceLatency: 20 + Math.floor(Math.random() * 8) }));
+  //     }, 1500);
+  //   }
+
+  //   connect();
+
+  //   return () => {
+  //     cancelled = true;
+  //     if (ws) ws.close();
+  //     if (fallbackInterval) clearInterval(fallbackInterval);
+  //     if (reconnectTimeout) clearTimeout(reconnectTimeout);
+  //   };
+  // }, []); // ← hanya jalan sekali, emergencyStop diakses via ref
+
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let fallbackInterval: NodeJS.Timeout | null = null;
+  let fallbackInterval: NodeJS.Timeout | null = null;
 
-    const isHttps = window.location.protocol === "https:";
-    const wsProtocol = isHttps ? "wss:" : "ws:";
-    const wsHost = window.location.host;
-    const wsUrl = `${wsProtocol}//${wsHost}`;
+  fallbackInterval = setInterval(() => {
+    setVehicles(prev => prev.map(v => {
+      if (emergencyStopRef.current) return { ...v, speed: 0, state: "IDLE" };
+      let nextProgress = v.routeProgress;
+      let nextLat = v.lat;
+      let nextLon = v.lon;
+      let nextSpeed = v.speed;
 
-    try {
-      ws = new WebSocket(wsUrl);
-      ws.onopen = () => setWsConnected(true);
-      ws.onmessage = (event) => {
-        try {
-          const packet = JSON.parse(event.data);
-          if (packet.type === "TELEMETRY") {
-            if (packet.vehicles) setVehicles(packet.vehicles);
-            if (packet.telemetryStream) setTelemetryStream(packet.telemetryStream);
-            if (packet.metrics) setSystemMetrics(packet.metrics);
-          }
-        } catch {}
+      if (v.state === "MOVING") {
+        nextProgress = v.routeProgress + 2;
+        if (nextProgress >= 100) nextProgress = 0;
+        nextLat = v.id === "HAUL-01" ? 28.349129 + (nextProgress * 0.00004) : 28.350320 - (nextProgress * 0.00003);
+        nextLon = v.id === "HAUL-01" ? 118.294102 + (nextProgress * 0.00003) : 118.294950 + (nextProgress * 0.00002);
+        nextSpeed = 31 + Math.random() * 4 - 2;
+      }
+      return {
+        ...v,
+        routeProgress: nextProgress,
+        lat: Number(nextLat.toFixed(6)),
+        lon: Number(nextLon.toFixed(6)),
+        speed: Number(nextSpeed.toFixed(1))
       };
-      ws.onerror = () => setWsConnected(false);
-      ws.onclose = () => {
-        setWsConnected(false);
-        initFallbackLoop();
+    }));
+
+    setTelemetryStream(prev => prev.map(item => {
+      let change = (Math.random() - 0.5) * (item.value * 0.015);
+      return {
+        ...item,
+        timestamp: new Date().toLocaleTimeString(),
+        value: Number((item.value + change).toFixed(item.metric === "TPH" ? 0 : 1))
       };
-    } catch {
-      initFallbackLoop();
-    }
+    }));
 
-    function initFallbackLoop() {
-      if (fallbackInterval) clearInterval(fallbackInterval);
-      fallbackInterval = setInterval(() => {
-        setVehicles(prev => prev.map(v => {
-          if (emergencyStop) return { ...v, speed: 0, state: "IDLE" };
-          let nextProgress = v.routeProgress;
-          let nextLat = v.lat;
-          let nextLon = v.lon;
-          let nextSpeed = v.speed;
+    setSystemMetrics(prev => ({ ...prev, inferenceLatency: 20 + Math.floor(Math.random() * 8) }));
+  }, 1500);
 
-          if (v.state === "MOVING") {
-            nextProgress = v.routeProgress + 2;
-            if (nextProgress >= 100) nextProgress = 0;
-            nextLat = v.id === "HAUL-01" ? 28.349129 + (nextProgress * 0.00004) : 28.350320 - (nextProgress * 0.00003);
-            nextLon = v.id === "HAUL-01" ? 118.294102 + (nextProgress * 0.00003) : 118.294950 + (nextProgress * 0.00002);
-            nextSpeed = 31 + Math.random() * 4 - 2;
-          }
-          return {
-            ...v,
-            routeProgress: nextProgress,
-            lat: Number(nextLat.toFixed(6)),
-            lon: Number(nextLon.toFixed(6)),
-            speed: Number(nextSpeed.toFixed(1))
-          };
-        }));
+  setWsConnected(false); // tidak ada backend WS, jadi selalu false
 
-        setTelemetryStream(prev => prev.map(item => {
-          let change = (Math.random() - 0.5) * (item.value * 0.015);
-          return {
-            ...item,
-            timestamp: new Date().toLocaleTimeString(),
-            value: Number((item.value + change).toFixed(item.metric === "TPH" ? 0 : 1))
-          };
-        }));
-
-        setSystemMetrics(prev => ({ ...prev, inferenceLatency: 20 + Math.floor(Math.random() * 8) }));
-      }, 1500);
-    }
-
-    return () => {
-      if (ws) ws.close();
-      if (fallbackInterval) clearInterval(fallbackInterval);
-    };
-  }, [emergencyStop]);
+  return () => {
+    if (fallbackInterval) clearInterval(fallbackInterval);
+  };
+  }, []); // emergencyStop dibaca via emergencyStopRef, tidak perlu di dependency
 
   return (
     <TelemetryContext.Provider value={{

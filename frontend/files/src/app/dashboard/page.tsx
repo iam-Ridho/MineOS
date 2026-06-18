@@ -33,7 +33,7 @@ function mapToUnifiedDecision(d: AIDecision): UnifiedDecision {
   return {
     id: String(d.id), // ✅ Convert number ke string
     source: 'supabase',
-    agent: d.triggered_agents || 'FLEET AGENT',
+    agent: Array.isArray(d.triggered_agents) ? d.triggered_agents.join(', ') : (d.triggered_agents || 'FLEET AGENT'),
     message: d.decision_text || d.fleet_summary || 'No message',
     time: d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
     severity: mapPriorityToSeverity(d.priority_level),
@@ -109,7 +109,7 @@ export default function Page() {
             return [newDecision, ...prev].slice(0, 10);
           });
         },
-        (err) => {
+        (err: unknown) => {
           if (!mounted) return;
           setConnectionStatus('error');
           console.error('Supabase AI error:', err);
@@ -147,7 +147,7 @@ export default function Page() {
             return [newAlert, ...prev].slice(0, 20);
           });
         },
-        (err) => {
+        (err: unknown) => {
           console.error('Supabase alerts error:', err);
         }
       );

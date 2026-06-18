@@ -1,4 +1,4 @@
-// File: C:\Users\gyuuutaroo\Documents\mineose-frontend\files\src\app\digital-twin\page.tsx
+// File: D:\mine-os\frontend\files\src\app\digital-twin\page.tsx
 import * as entry from '../../../../src/app/digital-twin/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

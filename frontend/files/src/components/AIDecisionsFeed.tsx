@@ -8,7 +8,7 @@ import {
 } from '@/lib/supabase';
 
 export default function AIDecisionsFeed() {
-  const [decisions, setDecisions] = useState<AIDecision[]>([]);
+  const [decisions, setDecisions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);

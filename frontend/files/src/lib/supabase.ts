@@ -1,10 +1,10 @@
+// src/lib/supabase.ts
 import { createClient } from "@supabase/supabase-js";
-import { FleetAgent } from "@/types/fleet";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: {
     params: {
       eventsPerSecond: 10,
@@ -12,210 +12,235 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
-// ==================== TYPES (Sesuai Schema Database) ====================
+// ============ REALTIME SUBSCRIPTIONS (idempotent) ============
+// Mencegah error "cannot add postgres_changes callbacks after subscribe()"
+// dengan reuse channel yang sudah ada (by name) jika sudah subscribed.
 
-export interface AIDecision {
-  id: number;              // int8 → convert ke string di Dashboard
-  decision_text: string;
-  priority_level: string;
-  triggered_agents: string;
-  fleet_summary: string;
-  safety_summary: string;
-  emission_summary: string;
-  reclamation_summary: string;
-  scenario: string;
-  llm_engine: string;
-  timestamp: string;
-}
-
-export interface SupabaseAlert {
-  id: number;              // int8 → convert ke string di Dashboard
-  alert_type: string;
-  severity: string;
-  message: string;
-  vehicle_id: string;
-  zone: string;
-  acknowledged: boolean;
-  acknowledged_by: string;
-  acknowledged_at: string;
-  created_at: string;
-}
-
-// ==================== PARSER ====================
-function parseFleetAgent(raw: any, master?: any): FleetAgent {
-  return {
-    id: String(raw?.vehicle_id || raw?.id || "UNKNOWN"),
-    name: String(master?.name || raw?.vehicle_id || "UNKNOWN"),
-    status: Number(raw?.speed_kmh || 0) > 0.5 ? "active" : "idle",
-    type: String(master?.type || "Unknown"),
-    fuel: Number(raw?.fuel_pct || 0),
-    location: {
-      lat: Number(raw?.latitude || 0),
-      lon: Number(raw?.longitude || 0),
-    },
-    speed: Number(raw?.speed_kmh || 0),
-    heading: Number(raw?.heading_deg || 0),
-    operator: String(raw?.operator_name || "Unknown"),
-    zone: String(raw?.zone || "Unknown"),
-    capacity: Number(master?.capacity_ton || 0),
-    load_weight: Number(raw?.load_weight_ton || 0),
-    timestamp: raw?.timestamp || new Date().toISOString(),
-  };
-}
-
-// ==================== FLEET FUNCTIONS (Digital Twin) ====================
-
-export async function fetchFleetAgents(): Promise<FleetAgent[]> {
-  console.log("📡 Calling RPC: get_latest_fleet()");
-
-  const { data, error } = await supabase.rpc("get_latest_fleet");
-
-  if (error) {
-    console.error("❌ RPC error:", error);
-    throw error;
-  }
-
-  const agents: FleetAgent[] = (data || []).map((row: any) => parseFleetAgent(row, row));
-  console.log("📦 Fleet agents loaded:", agents.length, "vehicles");
-  console.log("📦 Vehicle IDs:", agents.map((a: FleetAgent) => a.id));
-
-  return agents;
-}
-
-export function subscribeToFleetAgents(
-  onUpdate: (agent: FleetAgent) => void,
-  onStatusChange?: (status: string) => void
+function getOrCreateChannel(
+  channelName: string,
+  table: string,
+  callback: (payload: any) => void
 ) {
-  console.log("📡 Subscribing to fleet realtime...");
+  // Cek apakah channel dengan nama ini sudah ada & sudah subscribed
+  const existing = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
 
-  const channel = supabase
-    .channel("fleet-realtime")
-    .on(
-      "postgres_changes",
-      {
-        event: "INSERT",
-        schema: "public",
-        table: "vehicle_positions",
-      },
-      async (payload: any) => {
-        console.log("🆕 Fleet position realtime:", payload.new);
-
-        const vid = String(payload.new?.vehicle_id);
-
-        let master = null;
-        try {
-          const { data } = await supabase
-            .from("vehicles")
-            .select("*")
-            .eq("id", vid)
-            .maybeSingle();
-          master = data;
-        } catch (e) {
-          console.warn("⚠️ Master fetch failed for", vid);
-        }
-
-        const agent = parseFleetAgent(payload.new, master);
-        console.log("🎯 Parsed fleet agent:", agent.id, agent.name, agent.location);
-
-        onUpdate(agent);
-      }
-    )
-    .subscribe((status: string) => {
-      console.log("📡 Fleet agents status:", status);
-      onStatusChange?.(status);
-    });
-
-  return channel;
-}
-
-// ==================== DASHBOARD FUNCTIONS ====================
-
-export async function fetchAIDecisions(): Promise<AIDecision[]> {
-  const { data, error } = await supabase
-    .from("ai_decisions")
-    .select("*")
-    .order("timestamp", { ascending: false })
-    .limit(50);
-
-  if (error) {
-    console.error("❌ Error fetch AI decisions:", error);
-    return [];
+  if (existing && existing.state === "joined") {
+    console.warn(`[supabase] Channel "${channelName}" sudah subscribed, reuse existing.`);
+    return existing;
   }
 
-  return (data || []) as AIDecision[];
-}
-
-export async function fetchAlerts(): Promise<SupabaseAlert[]> {
-  const { data, error } = await supabase
-    .from("alerts")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (error) {
-    console.error("❌ Error fetch alerts:", error);
-    return [];
+  // Kalau ada tapi belum joined (misal masih "closed"), remove dulu agar bersih
+  if (existing) {
+    supabase.removeChannel(existing);
   }
 
-  return (data || []) as SupabaseAlert[];
-}
-
-export function subscribeToAIDecisions(
-  onUpdate: (decision: AIDecision) => void,
-  onError?: (err: Error) => void
-) {
   return supabase
-    .channel("ai-decisions")
+    .channel(channelName)
     .on(
       "postgres_changes",
-      { event: "INSERT", schema: "public", table: "ai_decisions" },
-      (payload: any) => {
-        onUpdate(payload.new as AIDecision);
-      }
-    )
-    .subscribe((status: string) => {
-      if (status === "CHANNEL_ERROR" && onError) {
-        onError(new Error("AI decisions channel error"));
-      }
-    });
+      { event: "INSERT", schema: "public", table },
+      callback
+    );
 }
 
-export function subscribeToAlerts(
-  onUpdate: (alert: SupabaseAlert) => void,
-  onError?: (err: Error) => void
-) {
-  return supabase
-    .channel("alerts")
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "alerts" },
-      (payload: any) => {
-        onUpdate(payload.new as SupabaseAlert);
-      }
-    )
-    .subscribe((status: string) => {
-      if (status === "CHANNEL_ERROR" && onError) {
-        onError(new Error("Alerts channel error"));
-      }
-    });
+export function createFleetAgentsChannel(callback: (payload: any) => void) {
+  return getOrCreateChannel("vehicle_positions_realtime", "vehicle_positions", callback);
 }
 
-// ==================== LEGACY FUNCTIONS ====================
+export function createAlertsChannel(callback: (payload: any) => void) {
+  return getOrCreateChannel("alerts", "alerts", callback);
+}
+
+export function createAIDecisionsChannel(callback: (payload: any) => void) {
+  return getOrCreateChannel("ai-decisions", "ai_decisions", callback);
+}
+
+export function createOperatorFatigueChannel(callback: (payload: any) => void) {
+  return getOrCreateChannel("operator-fatigue", "operator_fatigue", callback);
+}
+
+export function createEnvironmentSensorsChannel(callback: (payload: any) => void) {
+  return getOrCreateChannel("environment-sensors", "environment_sensors", callback);
+}
+
+// ============ BACKWARD COMPATIBLE: subscribe functions ============
+
+export function subscribeToFleetAgents(callback: (payload: any) => void, onError?: (err: any) => void) {
+  const ch = createFleetAgentsChannel(callback);
+  if (ch.state === "joined") return ch;
+  return ch.subscribe((status: string, err?: Error) => {
+    if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && onError) onError(err ?? status);
+  });
+}
+
+export function subscribeToAlerts(callback: (payload: any) => void, onError?: (err: any) => void) {
+  const ch = createAlertsChannel(callback);
+  if (ch.state === "joined") return ch;
+  return ch.subscribe((status: string, err?: Error) => {
+    if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && onError) onError(err ?? status);
+  });
+}
+
+export function subscribeToAIDecisions(callback: (payload: any) => void, onError?: (err: any) => void) {
+  const ch = createAIDecisionsChannel(callback);
+  if (ch.state === "joined") return ch;
+  return ch.subscribe((status: string, err?: Error) => {
+    if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && onError) onError(err ?? status);
+  });
+}
+
+export function subscribeToOperatorFatigue(callback: (payload: any) => void, onError?: (err: any) => void) {
+  const ch = createOperatorFatigueChannel(callback);
+  if (ch.state === "joined") return ch;
+  return ch.subscribe((status: string, err?: Error) => {
+    if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && onError) onError(err ?? status);
+  });
+}
+
+export function subscribeToEnvironmentSensors(callback: (payload: any) => void, onError?: (err: any) => void) {
+  const ch = createEnvironmentSensorsChannel(callback);
+  if (ch.state === "joined") return ch;
+  return ch.subscribe((status: string, err?: Error) => {
+    if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && onError) onError(err ?? status);
+  });
+}
+
+// ============ REST API ============
+// (bagian getVehiclePositions, getAlerts, dll — tidak berubah)
 
 export async function getVehiclePositions() {
   const { data, error } = await supabase
     .from("vehicle_positions")
     .select("*")
     .order("timestamp", { ascending: false })
-    .limit(5000);
+    .limit(100);
 
   if (error) throw error;
-  return data || [];
+  return data;
 }
 
-export function subscribeToVehiclePositions(callback: (payload: any) => void) {
-  return supabase
-    .channel("vehicle-positions")
-    .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_positions" }, callback)
-    .subscribe();
+export async function getAlerts() {
+  const { data, error } = await supabase
+    .from("alerts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getAIDecisions() {
+  const { data, error } = await supabase
+    .from("ai_decisions")
+    .select("*")
+    .order("timestamp", { ascending: false })
+    .limit(20);
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getOperatorFatigue() {
+  const { data, error } = await supabase
+    .from("operator_fatigue")
+    .select("*")
+    .order("timestamp", { ascending: false })
+    .limit(50);
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getEnvironmentSensors() {
+  const { data, error } = await supabase
+    .from("environment_sensors")
+    .select("*")
+    .order("timestamp", { ascending: false })
+    .limit(10);
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getReclamationZones() {
+  const { data, error } = await supabase
+    .from("reclamation_zones")
+    .select("*")
+    .order("last_updated", { ascending: false })
+    .limit(10);
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getProductionSnapshots() {
+  const { data, error } = await supabase
+    .from("production_snapshots")
+    .select("*")
+    .order("snapshot_at", { ascending: false })
+    .limit(30);
+
+  if (error) throw error;
+  return data;
+}
+
+// ============ ALIASES FOR BACKWARD COMPATIBILITY ============
+
+export const fetchVehiclePositions = getVehiclePositions;
+export const fetchAlerts = getAlerts;
+export const fetchAIDecisions = getAIDecisions;
+export const fetchOperatorFatigue = getOperatorFatigue;
+export const fetchEnvironmentSensors = getEnvironmentSensors;
+export const fetchReclamationZones = getReclamationZones;
+export const fetchProductionSnapshots = getProductionSnapshots;
+
+// ============ TYPES ============
+
+export interface VehiclePosition {
+  vehicle_id: string;
+  latitude: number;
+  longitude: number;
+  speed_kmh: number;
+  heading_deg: number;
+  fuel_pct: number;
+  load_weight_ton: number;
+  zone: string;
+  operator_name: string;
+  timestamp: string;
+}
+
+export interface Alert {
+  alert_id: string;
+  alert_type: string;
+  severity: string;
+  message: string;
+  vehicle_id: string;
+  zone: string;
+  created_at: string;
+}
+
+export interface AIDecision {
+  id: number;
+  decision_id: string;
+  decision_text: string;
+  fleet_summary?: string;
+  priority_level: string;
+  triggered_agents: string[];
+  scenario: string;
+  llm_engine: string;
+  timestamp: string;
+}
+
+export interface SupabaseAlert {
+  id: number;
+  alert_id: string;
+  alert_type: string;
+  severity: string;
+  message: string;
+  vehicle_id: string;
+  zone: string;
+  created_at: string;
+  acknowledged?: boolean;
+  acknowledged_by?: string;
 }

@@ -4,11 +4,10 @@ import { useEffect, useState } from 'react';
 import {
   subscribeToVehiclePositions,
   getVehiclePositions,
-  VehiclePosition,
 } from '@/lib/supabase';
 
 export default function VehiclePositionsFeed() {
-  const [positions, setPositions] = useState<VehiclePosition[]>([]);
+  const [positions, setPositions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -45,10 +44,6 @@ export default function VehiclePositionsFeed() {
           // Add new position to beginning
           return [newPosition, ...prev].slice(0, 20);
         });
-      },
-      (err) => {
-        console.error('Subscription error:', err);
-        setError(err.message);
       }
     );
 
