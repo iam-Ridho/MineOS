@@ -18,6 +18,85 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen>
   int _loadingProgress = 0;
   late AnimationController _pulseController;
 
+  Future<void> _injectMobileStyle() async {
+  await _controller.runJavaScript('''
+    (function() {
+      // Tunggu DOM siap
+      function hideSidebar() {
+        // Sembunyikan semua kemungkinan sidebar
+        const sidebarSelectors = [
+          'aside', 'nav', '.sidebar', '.side-nav',
+          '.sidenav', '[class*="sidebar"]', '[class*="side-bar"]',
+          '[class*="drawer"]', '[class*="navigation"]',
+          '[id*="sidebar"]', '[id*="sidenav"]', '.drawer',
+          '[class*="nav-panel"]', '[class*="left-panel"]'
+        ];
+        
+        sidebarSelectors.forEach(sel => {
+          document.querySelectorAll(sel).forEach(el => {
+            el.style.cssText += 'display:none!important;width:0!important;visibility:hidden!important;';
+          });
+        });
+        
+        // Paksa main content fullscreen
+        const mainSelectors = [
+          'main', '.main', '#main', '#content', '.content',
+          '[class*="main-content"]', '[class*="page-content"]',
+          '[class*="digital-twin"]', '[class*="viewport"]',
+          '[class*="scene"]', 'canvas', '#root > div'
+        ];
+        
+        mainSelectors.forEach(sel => {
+          document.querySelectorAll(sel).forEach(el => {
+            el.style.cssText += 'width:100vw!important;margin-left:0!important;padding-left:0!important;left:0!important;';
+          });
+        });
+        
+        // Inject global CSS
+        const style = document.createElement('style');
+        style.textContent = \`
+          * { box-sizing: border-box; }
+          body { 
+            overflow: hidden !important; 
+            margin: 0 !important; 
+            padding: 0 !important;
+          }
+          aside, nav, 
+          [class*="sidebar"], 
+          [class*="side-nav"],
+          [class*="drawer"] { 
+            display: none !important; 
+            width: 0 !important; 
+          }
+          main, .main, #main,
+          [class*="main-content"],
+          [class*="page-content"] {
+            width: 100vw !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            left: 0 !important;
+          }
+          canvas {
+            width: 100vw !important;
+            height: 100vh !important;
+          }
+        \`;
+        document.head.appendChild(style);
+        
+        console.log('MineOS Mobile: Sidebar hidden, fullscreen active');
+      }
+      
+      // Jalankan sekarang
+      hideSidebar();
+      
+      // Jalankan lagi setelah 1 detik (untuk SPA yang load lambat)
+      setTimeout(hideSidebar, 1000);
+      setTimeout(hideSidebar, 2000);
+      setTimeout(hideSidebar, 3000);
+    })();
+  ''');
+}
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +121,7 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen>
           },
           onPageFinished: (_) {
             setState(() => _isLoading = false);
+            _injectMobileStyle();
           },
           onWebResourceError: (_) {
             setState(() {

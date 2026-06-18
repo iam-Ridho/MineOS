@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 typedef SwitchTabCallback = void Function(int index);
 
@@ -24,58 +26,59 @@ class _DashboardScreenState extends State<DashboardScreen>
   int _safetyAlerts = 2;
   double _dailyCO2 = 4.8;
   double _reclamation = 68.4;
+  double _efficiency = 94.2;
   String _currentTime = '';
+  String _currentDate = '';
+
+  // Design tokens — Enterprise
+  static const Color _bg = Color(0xFFF7F9FC);
+  static const Color _surface = Color(0xFFFFFFFF);
+  static const Color _navy = Color(0xFF0A1628);
+  static const Color _navyMid = Color(0xFF1E3A5F);
+  static const Color _blue = Color(0xFF1D4ED8);
+  static const Color _blueLight = Color(0xFFEFF6FF);
+  static const Color _textPrimary = Color(0xFF0F172A);
+  static const Color _textSecondary = Color(0xFF475569);
+  static const Color _textMuted = Color(0xFF94A3B8);
+  static const Color _border = Color(0xFFE2E8F0);
+  static const Color _success = Color(0xFF059669);
+  static const Color _successBg = Color(0xFFECFDF5);
+  static const Color _warning = Color(0xFFD97706);
+  static const Color _warningBg = Color(0xFFFFFBEB);
+  static const Color _danger = Color(0xFFDC2626);
+  static const Color _dangerBg = Color(0xFFFEF2F2);
+  static const Color _info = Color(0xFF0284C7);
+  static const Color _infoBg = Color(0xFFEFF6FF);
 
   final List<Map<String, dynamic>> _aiFeeds = [
     {
-      'agent': 'FLEET AGENT',
+      'agent': 'Fleet Agent',
       'type': 'Kritis',
       'typeColor': 0xFFDC2626,
-      'time': '12:45:02',
+      'typeBg': 0xFFFEF2F2,
+      'time': '12:45',
       'message': 'Evakuasi disarankan segera di Pit Alpha — Stabilitas Lereng 78%',
       'action': 'Ambil Tindakan',
       'actionSecondary': 'Abaikan',
     },
     {
-      'agent': 'SAFETY AGENT',
+      'agent': 'Safety Agent',
       'type': 'Peringatan',
       'typeColor': 0xFFD97706,
-      'time': '12:44:15',
+      'typeBg': 0xFFFFFBEB,
+      'time': '12:44',
       'message': 'Reroute Armada B-3 disarankan karena kondisi cuaca buruk.',
       'action': 'Optimalkan',
       'actionSecondary': null,
     },
-    {
-      'agent': 'EMISSION AGENT',
-      'type': 'Normal',
-      'typeColor': 0xFF059669,
-      'time': '12:42:00',
-      'message': 'Siklus pengisian daya otonom Fleet Delta selesai dengan baik.',
-      'action': null,
-      'actionSecondary': null,
-    },
   ];
-
-  // ── Color System ─────────────────────────────────────────
-  static const Color _kBackground = Color(0xFFF8FAFC);
-  static const Color _kSurface = Color(0xFFFFFFFF);
-  static const Color _kNavy = Color(0xFF0A1628);
-  static const Color _kNavyLight = Color(0xFF1E293B);
-  static const Color _kTextPrimary = Color(0xFF0F172A);
-  static const Color _kTextSecondary = Color(0xFF475569);
-  static const Color _kTextTertiary = Color(0xFF94A3B8);
-  static const Color _kBorder = Color(0xFFE2E8F0);
-  static const Color _kSuccess = Color(0xFF059669);
-  static const Color _kWarning = Color(0xFFD97706);
-  static const Color _kDanger = Color(0xFFDC2626);
-  static const Color _kInfo = Color(0xFF0284C7);
 
   @override
   void initState() {
     super.initState();
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 2000),
     )..repeat(reverse: true);
     _updateTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -83,10 +86,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         _updateTime();
         if (_timer!.tick % 5 == 0) {
           _activeVehicles += _random.nextInt(3) - 1;
-          _dailyCO2 = (_dailyCO2 + (_random.nextDouble() - 0.5) * 0.1)
-              .clamp(3.0, 7.0);
-          _reclamation = (_reclamation + (_random.nextDouble() - 0.5) * 0.1)
-              .clamp(60.0, 80.0);
+          _dailyCO2 = (_dailyCO2 + (_random.nextDouble() - 0.5) * 0.1).clamp(3.0, 7.0);
+          _reclamation = (_reclamation + (_random.nextDouble() - 0.5) * 0.1).clamp(60.0, 80.0);
+          _efficiency = (_efficiency + (_random.nextDouble() - 0.5) * 0.2).clamp(85.0, 99.0);
         }
       });
     });
@@ -96,6 +98,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     final now = DateTime.now();
     _currentTime =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+    final months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    _currentDate = '${now.day} ${months[now.month - 1]} ${now.year}';
   }
 
   @override
@@ -107,138 +111,145 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _kBackground,
-      body: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeader()),
-            SliverToBoxAdapter(child: _buildStatusBanner()),
-            SliverToBoxAdapter(child: _buildKPIGrid()),
-            SliverToBoxAdapter(child: _buildSectionTitle('AI Decision Feed', badge: 'Real-time')),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => _AIFeedCard(
-                  feed: _aiFeeds[index],
-                  onTap: () => widget.onSwitchTab?.call(2),
-                ),
-                childCount: _aiFeeds.length,
-              ),
-            ),
-            SliverToBoxAdapter(child: _buildSectionTitle('Status Agen AI')),
-            SliverToBoxAdapter(child: _buildAgentStatusSection()),
-            const SliverToBoxAdapter(child: SizedBox(height: 120)),
-          ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: _bg,
+        body: SafeArea(
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(child: _buildTopBar()),
+              SliverToBoxAdapter(child: _buildHeroBanner()),
+              SliverToBoxAdapter(child: _buildMetricsRow()),
+              SliverToBoxAdapter(child: _buildMapPreview()),
+              SliverToBoxAdapter(child: _buildAIFeedSection()),
+              SliverToBoxAdapter(child: _buildAgentRow()),
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── Header ───────────────────────────────────────────────
-  Widget _buildHeader() {
+  // ── Top Bar ──────────────────────────────────────────────
+  Widget _buildTopBar() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      color: _surface,
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
       child: Row(
         children: [
-          // Logo mark with subtle gradient depth
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [_kNavy, _kNavyLight],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: _kNavy.withOpacity(0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: const Center(
-              child: Text(
-                'M',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // Logo
+          Row(
             children: [
-              Text(
-                'MineOS',
-                style: GoogleFonts.inter(
-                  color: _kTextPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _navy,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    'M',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
               ),
-              Text(
-                'Command Center',
-                style: GoogleFonts.inter(
-                  color: _kTextSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.2,
-                ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'MineOS',
+                    style: GoogleFonts.inter(
+                      color: _textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  Text(
+                    'Operations Dashboard',
+                    style: GoogleFonts.inter(
+                      color: _textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const Spacer(),
-          // Live Time Pill
+          // Time chip
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: _kSurface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: _kBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              color: _bg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _border),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 AnimatedBuilder(
                   animation: _pulseController,
                   builder: (_, __) => Container(
-                    width: 8,
-                    height: 8,
+                    width: 6,
+                    height: 6,
                     decoration: BoxDecoration(
                       color: Color.lerp(
-                        _kSuccess,
-                        _kSuccess.withOpacity(0.2),
+                        _success,
+                        _success.withOpacity(0.2),
                         _pulseController.value,
                       ),
                       shape: BoxShape.circle,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Text(
                   _currentTime,
                   style: GoogleFonts.inter(
-                    color: _kTextPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+                    color: _textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                     fontFeatures: [const FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Notification bell
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: _dangerBg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _danger.withOpacity(0.15)),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(Icons.notifications_outlined, color: _danger, size: 18),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: _danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1),
+                    ),
                   ),
                 ),
               ],
@@ -249,272 +260,251 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  // ── Status Banner ────────────────────────────────────────
-  Widget _buildStatusBanner() {
+  // ── Hero Banner ──────────────────────────────────────────
+  Widget _buildHeroBanner() {
+    final h = DateTime.now().hour;
+    final greeting = h < 12 ? 'Selamat Pagi' : h < 18 ? 'Selamat Siang' : 'Selamat Malam';
+    final shift = h >= 6 && h < 14 ? 'Shift Pagi · 06:00–14:00' : h >= 14 && h < 22 ? 'Shift Siang · 14:00–22:00' : 'Shift Malam · 22:00–06:00';
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [_kNavy, _kNavyLight],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_navy, _navyMid],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: _kNavy.withOpacity(0.15),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: _navy.withOpacity(0.25),
+            blurRadius: 32,
+            offset: const Offset(0, 12),
+            spreadRadius: -8,
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.verified_outlined,
-              color: Colors.white,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Sistem Operasional — 4 Agen Aktif',
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: _kSuccess,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              'LIVE',
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── KPI Grid (Overflow Fixed) ──────────────────────────
-  Widget _buildKPIGrid() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final crossAxisCount = 2;
-          final spacing = 12.0;
-          final itemWidth = (constraints.maxWidth - spacing) / crossAxisCount;
-          
-          return Wrap(
-            spacing: spacing,
-            runSpacing: spacing,
+          Row(
             children: [
-              SizedBox(
-                width: itemWidth,
-                child: _KPICard(
-                  label: 'Armada Aktif',
-                  value: '$_activeVehicles',
-                  sub: 'kendaraan',
-                  icon: Icons.local_shipping_outlined,
-                  accentColor: _kNavy,
-                  trend: '+3.2%',
-                  trendUp: true,
-                  onTap: () => widget.onSwitchTab?.call(1),
+              Text(
+                greeting,
+                style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              SizedBox(
-                width: itemWidth,
-                child: _KPICard(
-                  label: 'Alert Safety',
-                  value: '$_safetyAlerts',
-                  sub: '24 jam terakhir',
-                  icon: Icons.shield_outlined,
-                  accentColor: _kDanger,
-                  trend: 'Perlu Aksi',
-                  trendUp: false,
-                  onTap: () => widget.onSwitchTab?.call(2),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _success.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _success.withOpacity(0.3)),
                 ),
-              ),
-              SizedBox(
-                width: itemWidth,
-                child: _KPICard(
-                  label: 'Emisi CO₂',
-                  value: '${_dailyCO2.toStringAsFixed(1)}t',
-                  sub: 'hari ini',
-                  icon: Icons.eco_outlined,
-                  accentColor: _kInfo,
-                  trend: '-12%',
-                  trendUp: true,
-                  onTap: null,
-                ),
-              ),
-              SizedBox(
-                width: itemWidth,
-                child: _KPICard(
-                  label: 'Reklamasi',
-                  value: '${_reclamation.toStringAsFixed(1)}%',
-                  sub: 'dari target',
-                  icon: Icons.landscape_outlined,
-                  accentColor: _kSuccess,
-                  showBar: true,
-                  barValue: _reclamation / 100,
-                  onTap: null,
+                child: Text(
+                  shift,
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF6EE7B7),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
-          );
-        },
-      ),
-    );
-  }
-
-  // ── Section Title ────────────────────────────────────────
-  Widget _buildSectionTitle(String title, {String? badge}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 32, 20, 16),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 20,
-            decoration: BoxDecoration(
-              color: _kNavy,
-              borderRadius: BorderRadius.circular(2),
-            ),
           ),
-          const SizedBox(width: 10),
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              color: _kTextPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const Spacer(),
-          if (badge != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFDBEAFE),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFBFDBFE)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: _kInfo,
-                      shape: BoxShape.circle,
+                  Text(
+                    'Kideco Operations',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      height: 1,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(height: 4),
                   Text(
-                    badge,
+                    'PT Kideco Jaya Agung · $_currentDate',
                     style: GoogleFonts.inter(
-                      color: _kInfo,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withOpacity(0.4),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
               ),
+              const Spacer(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${_efficiency.toStringAsFixed(1)}%',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w300,
+                      letterSpacing: -1,
+                      height: 1,
+                    ),
+                  ),
+                  Text(
+                    'Efisiensi',
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.4),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Progress bar efisiensi
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: _efficiency / 100,
+              backgroundColor: Colors.white.withOpacity(0.1),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF6EE7B7)),
+              minHeight: 4,
             ),
+          ),
+          const SizedBox(height: 16),
+          // Bottom stats
+          Row(
+            children: [
+              _BannerStat(label: 'Agen AI', value: '4 Aktif', icon: Icons.smart_toy_outlined),
+              _BannerDivider(),
+              _BannerStat(label: 'Armada', value: '$_activeVehicles unit', icon: Icons.local_shipping_outlined),
+              _BannerDivider(),
+              _BannerStat(
+                label: 'Alert',
+                value: '$_safetyAlerts aktif',
+                icon: Icons.warning_amber_outlined,
+                valueColor: _safetyAlerts > 0 ? const Color(0xFFFCA5A5) : const Color(0xFF6EE7B7),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  // ── Agent Status ───────────────────────────────────────
-  Widget _buildAgentStatusSection() {
-    final agents = [
-      {'label': 'Fleet', 'status': 'Optimal', 'color': _kSuccess, 'icon': Icons.local_shipping_outlined},
-      {'label': 'Safety', 'status': 'Kritis', 'color': _kDanger, 'icon': Icons.shield_outlined},
-      {'label': 'Emisi', 'status': 'Normal', 'color': _kInfo, 'icon': Icons.eco_outlined},
-      {'label': 'Lahan', 'status': 'Aktif', 'color': _kSuccess, 'icon': Icons.landscape_outlined},
+  // ── Metrics Row ──────────────────────────────────────────
+  Widget _buildMetricsRow() {
+    final metrics = [
+      {
+        'label': 'Safety Alert',
+        'value': '$_safetyAlerts',
+        'sub': '24 jam terakhir',
+        'color': _danger,
+        'bg': _dangerBg,
+        'icon': Icons.shield_rounded,
+        'tab': 2,
+      },
+      {
+        'label': 'Emisi CO₂',
+        'value': '${_dailyCO2.toStringAsFixed(1)}t',
+        'sub': '-12% dari target',
+        'color': _info,
+        'bg': _infoBg,
+        'icon': Icons.eco_rounded,
+        'tab': null,
+      },
+      {
+        'label': 'Reklamasi',
+        'value': '${_reclamation.toStringAsFixed(0)}%',
+        'sub': 'dari target lahan',
+        'color': _success,
+        'bg': _successBg,
+        'icon': Icons.landscape_rounded,
+        'tab': null,
+      },
     ];
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Row(
-        children: agents.map((a) {
-          final color = a['color'] as Color;
+        children: metrics.asMap().entries.map((e) {
+          final m = e.value;
+          final color = m['color'] as Color;
+          final bg = m['bg'] as Color;
+          final tab = m['tab'] as int?;
           return Expanded(
-            child: Container(
-              margin: EdgeInsets.only(
-                right: a == agents.last ? 0 : 10,
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-              decoration: BoxDecoration(
-                color: _kSurface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _kBorder),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(10),
+            child: GestureDetector(
+              onTap: tab != null ? () => widget.onSwitchTab?.call(tab) : null,
+              child: Container(
+                margin: EdgeInsets.only(right: e.key < 2 ? 8 : 0),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
-                    child: Icon(
-                      a['icon'] as IconData,
-                      color: color,
-                      size: 20,
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: bg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(m['icon'] as IconData, color: color, size: 14),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    a['label'] as String,
-                    style: GoogleFonts.inter(
-                      color: _kTextSecondary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
+                    const SizedBox(height: 10),
+                    Text(
+                      m['value'] as String,
+                      style: GoogleFonts.inter(
+                        color: _textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                        height: 1,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    a['status'] as String,
-                    style: GoogleFonts.inter(
-                      color: color,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(height: 3),
+                    Text(
+                      m['label'] as String,
+                      style: GoogleFonts.inter(
+                        color: _textMuted,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      m['sub'] as String,
+                      style: GoogleFonts.inter(
+                        color: color,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -522,334 +512,629 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
   }
-}
 
-// ── KPI Card (Premium + Overflow Safe) ───────────────────
-class _KPICard extends StatelessWidget {
-  final String label;
-  final String value;
-  final String sub;
-  final IconData icon;
-  final Color accentColor;
-  final String? trend;
-  final bool trendUp;
-  final bool showBar;
-  final double barValue;
-  final VoidCallback? onTap;
-
-  const _KPICard({
-    required this.label,
-    required this.value,
-    required this.sub,
-    required this.icon,
-    required this.accentColor,
-    this.trend,
-    this.trendUp = true,
-    this.showBar = false,
-    this.barValue = 0,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFE2E8F0),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-              spreadRadius: -2,
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header: Label + Icon
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    label,
-                    style: GoogleFonts.inter(
-                      color: const Color(0xFF475569),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.3,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: accentColor.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: accentColor, size: 16),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // Value
-            Text(
-              value,
-              style: GoogleFonts.inter(
-                color: const Color(0xFF0F172A),
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-                height: 1.0,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Trend / Bar
-            if (trend != null)
-              Row(
-                children: [
-                  Icon(
-                    trendUp
-                        ? Icons.trending_up_rounded
-                        : Icons.trending_down_rounded,
-                    color: trendUp
-                        ? const Color(0xFF059669)
-                        : const Color(0xFFDC2626),
-                    size: 14,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    trend!,
-                    style: GoogleFonts.inter(
-                      color: trendUp
-                          ? const Color(0xFF059669)
-                          : const Color(0xFFDC2626),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      sub,
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF94A3B8),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            if (showBar) ...[
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: barValue,
-                  backgroundColor: const Color(0xFFF1F5F9),
-                  color: accentColor,
-                  minHeight: 6,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                sub,
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF94A3B8),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── AI Feed Card (Premium + Overflow Safe) ─────────────
-class _AIFeedCard extends StatelessWidget {
-  final Map<String, dynamic> feed;
-  final VoidCallback? onTap;
-  const _AIFeedCard({required this.feed, this.onTap});
-
-  static const Color _kTextPrimary = Color(0xFF0F172A);
-  static const Color _kTextSecondary = Color(0xFF475569);
-  static const Color _kTextTertiary = Color(0xFF94A3B8);
-  static const Color _kBorder = Color(0xFFE2E8F0);
-  static const Color _kNavy = Color(0xFF0A1628);
-  static const Color _kDanger = Color(0xFFDC2626);
-
-  @override
-  Widget build(BuildContext context) {
-    final typeColor = Color(feed['typeColor'] as int);
-    final type = feed['type'] as String;
-    final isKritis = type == 'Kritis';
-
+  // ── Map Preview ──────────────────────────────────────────
+  Widget _buildMapPreview() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isKritis ? _kDanger.withOpacity(0.2) : _kBorder,
-          width: isKritis ? 1.5 : 1,
-        ),
+        color: _surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: isKritis
-                ? _kDanger.withOpacity(0.06)
-                : Colors.black.withOpacity(0.03),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-            spreadRadius: -2,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Meta Row
-            Row(
+      child: Column(
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: typeColor.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: typeColor.withOpacity(0.15),
-                      width: 1,
-                    ),
+                    color: _infoBg,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(
-                    type.toUpperCase(),
-                    style: GoogleFonts.inter(
-                      color: typeColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
+                  child: Icon(Icons.map_rounded, color: _info, size: 14),
                 ),
                 const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    feed['agent'] as String,
-                    style: GoogleFonts.inter(
-                      color: _kTextSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Live Map — Pit Area',
+                      style: GoogleFonts.inter(
+                        color: _textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                    Text(
+                      '$_activeVehicles kendaraan aktif',
+                      style: GoogleFonts.inter(
+                        color: _textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  feed['time'] as String,
-                  style: GoogleFonts.inter(
-                    color: _kTextTertiary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    fontFeatures: [const FontFeature.tabularFigures()],
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => widget.onSwitchTab?.call(1),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _navy,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Buka Peta',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            // Message
-            Text(
-              feed['message'] as String,
-              style: GoogleFonts.inter(
-                color: _kTextPrimary,
-                fontSize: 14,
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            // Actions
-            if (feed['action'] != null) ...[
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: onTap,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [_kNavy, Color(0xFF1E293B)],
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _kNavy.withOpacity(0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
+          ),
+          // Map
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(20)),
+            child: GestureDetector(
+              onTap: () => widget.onSwitchTab?.call(1),
+              child: SizedBox(
+                height: 180,
+                child: Stack(
+                  children: [
+                    FlutterMap(
+                      options: const MapOptions(
+                        initialCenter: LatLng(-1.9300, 116.3200),
+                        initialZoom: 13,
+                        interactionOptions: InteractionOptions(
+                          flags: InteractiveFlag.none,
                         ),
-                        child: Text(
-                          feed['action'] as String,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.kic2026.mineos',
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            LatLng(-1.9200, 116.3100),
+                            LatLng(-1.9350, 116.3250),
+                            LatLng(-1.9150, 116.3050),
+                            LatLng(-1.9450, 116.3350),
+                            LatLng(-1.9280, 116.3180),
+                          ]
+                              .map((pos) => Marker(
+                                    point: pos,
+                                    width: 20,
+                                    height: 20,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: _success,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: Colors.white, width: 2),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: _success.withOpacity(0.4),
+                                            blurRadius: 6,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ))
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                    // Overlay gradient bottom
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.3),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  if (feed['actionSecondary'] != null) ...[
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: _kBorder),
-                        ),
-                        child: Text(
-                          feed['actionSecondary'] as String,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            color: _kTextSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                    // Live badge
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: AnimatedBuilder(
+                        animation: _pulseController,
+                        builder: (_, __) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: Color.lerp(
+                                    _success,
+                                    _success.withOpacity(0.2),
+                                    _pulseController.value,
+                                  ),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                'LIVE',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ],
-                ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── AI Feed Section ──────────────────────────────────────
+  Widget _buildAIFeedSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: _navy,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'AI Decision Feed',
+                style: GoogleFonts.inter(
+                  color: _textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _successBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _success.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: _success,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Real-time',
+                      style: GoogleFonts.inter(
+                        color: _success,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
+          ),
+        ),
+        ..._aiFeeds.map((feed) => _AIFeedCard(
+              feed: feed,
+              onTap: () => widget.onSwitchTab?.call(2),
+            )),
+      ],
+    );
+  }
+
+  // ── Agent Row ────────────────────────────────────────────
+  Widget _buildAgentRow() {
+    final agents = [
+      {'label': 'Fleet', 'status': 'Optimal', 'color': _success, 'bg': _successBg, 'icon': Icons.local_shipping_rounded, 'desc': '$_activeVehicles unit'},
+      {'label': 'Safety', 'status': 'Kritis', 'color': _danger, 'bg': _dangerBg, 'icon': Icons.shield_rounded, 'desc': '$_safetyAlerts alert'},
+      {'label': 'Emisi', 'status': 'Normal', 'color': _info, 'bg': _infoBg, 'icon': Icons.eco_rounded, 'desc': '${_dailyCO2.toStringAsFixed(1)}t'},
+      {'label': 'Lahan', 'status': 'Aktif', 'color': _success, 'bg': _successBg, 'icon': Icons.landscape_rounded, 'desc': '${_reclamation.toStringAsFixed(0)}%'},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: _navy,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Status Agen AI',
+                style: GoogleFonts.inter(
+                  color: _textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 110,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: agents.length,
+            itemBuilder: (_, i) {
+              final a = agents[i];
+              final color = a['color'] as Color;
+              final bg = a['bg'] as Color;
+              return Container(
+                width: 130,
+                margin: const EdgeInsets.only(right: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: color.withOpacity(0.15)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: bg,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(a['icon'] as IconData,
+                              color: color, size: 14),
+                        ),
+                        const Spacer(),
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      a['status'] as String,
+                      style: GoogleFonts.inter(
+                        color: color,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      a['label'] as String,
+                      style: GoogleFonts.inter(
+                        color: _textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      a['desc'] as String,
+                      style: GoogleFonts.inter(
+                        color: _textMuted,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Banner Stat ──────────────────────────────────────────
+class _BannerStat extends StatelessWidget {
+  final String label, value;
+  final IconData icon;
+  final Color? valueColor;
+  const _BannerStat({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Colors.white.withOpacity(0.35), size: 10),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                color: Colors.white.withOpacity(0.35),
+                fontSize: 9,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            color: valueColor ?? Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            height: 1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BannerDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 28,
+      color: Colors.white.withOpacity(0.1),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+    );
+  }
+}
+
+// ── AI Feed Card ─────────────────────────────────────────
+class _AIFeedCard extends StatelessWidget {
+  final Map<String, dynamic> feed;
+  final VoidCallback? onTap;
+  const _AIFeedCard({required this.feed, this.onTap});
+
+  static const _navy = Color(0xFF0A1628);
+  static const _navyMid = Color(0xFF1E3A5F);
+  static const _border = Color(0xFFE2E8F0);
+  static const _textPrimary = Color(0xFF0F172A);
+  static const _textSecondary = Color(0xFF475569);
+  static const _textMuted = Color(0xFF94A3B8);
+  static const _bg = Color(0xFFF8FAFC);
+
+  @override
+  Widget build(BuildContext context) {
+    final typeColor = Color(feed['typeColor'] as int);
+    final typeBg = Color(feed['typeBg'] as int);
+    final type = feed['type'] as String;
+    final isKritis = type == 'Kritis';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isKritis ? typeColor.withOpacity(0.25) : _border,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isKritis
+                ? typeColor.withOpacity(0.08)
+                : Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+            spreadRadius: -4,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isKritis)
+            Container(
+              height: 3,
+              decoration: BoxDecoration(
+                color: typeColor,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: typeBg,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        type,
+                        style: GoogleFonts.inter(
+                          color: typeColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      feed['agent'] as String,
+                      style: GoogleFonts.inter(
+                        color: _textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      feed['time'] as String,
+                      style: GoogleFonts.inter(
+                        color: _textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  feed['message'] as String,
+                  style: GoogleFonts.inter(
+                    color: _textPrimary,
+                    fontSize: 13,
+                    height: 1.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (feed['action'] != null) ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: onTap,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [_navy, _navyMid],
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _navy.withOpacity(0.2),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              feed['action'] as String,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (feed['actionSecondary'] != null) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            decoration: BoxDecoration(
+                              color: _bg,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: _border),
+                            ),
+                            child: Text(
+                              feed['actionSecondary'] as String,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                color: _textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
