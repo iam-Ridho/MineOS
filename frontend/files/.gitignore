@@ -10,6 +10,7 @@ build/
 
 # Local env files
 .env*
+.env.local
 
 # Log files
 npm-debug.log*
@@ -34,6 +35,10 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+*.tsbuildinfo
+
+# Local cache and build metadata
+.cache/
 
 # Lock files if you don't want them in git
 # package-lock.json

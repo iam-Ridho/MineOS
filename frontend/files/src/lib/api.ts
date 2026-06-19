@@ -56,11 +56,62 @@ export interface Production {
   target?: number;
 }
 
-export interface LLMReport {
-  scenario: 'normal' | 'critical' | 'warning';
-  timestamp: string;
-  report: string;
-  recommendations?: string[];
+// ==========================================
+// LLM Report Types
+// ==========================================
+
+export type Shift = "Pagi" | "Siang" | "Malam";
+export type AlertPriority = "CRITICAL" | "WARNING" | "INFO";
+
+export interface LLMReportPayload {
+  scenario: string;
+  tanggal: string;
+  shift: string;
+}
+
+export interface LLMReportResponse {
+  generated_at?: string;
+  generatedAt?: string;
+  tanggal?: string;
+  shift?: string;
+  executive_summary?: string;
+  executiveSummary?: string;
+  fleet?: object;
+  safety?: object;
+  emission?: object;
+  reclamation?: object;
+  alerts?: object[];
+  [key: string]: any;
+}
+
+export interface ReportRow {
+  id?: string;
+  timestamp?: string;
+  created_at?: string;
+  tanggal?: string;
+  date?: string;
+  report_date?: string;
+  shift?: string;
+  status?: string;
+  summary?: string;
+  executive_summary?: string;
+  decision_text?: string;
+  report?: object;
+  [key: string]: any;
+}
+
+export interface ReclamationZoneRow {
+  area?: string;
+  name?: string;
+  zone?: string;
+  completion?: number;
+  progress?: number;
+  completion_percentage?: number;
+  vegetasiIndex?: number;
+  vegetasi_index?: number;
+  vegetation_index?: number;
+  status?: string;
+  [key: string]: any;
 }
 
 // ==========================================
@@ -187,32 +238,97 @@ export async function getEmissionsToday(): Promise<Emission> {
 // Analytics API
 // ==========================================
 
-export interface AnalyticsParams {
-  period?: 'day' | 'week' | 'month' | 'year';
+export interface BackendProductionItem {
+  date: string;
+  production_ton: number;
+  target_ton: number;
+  fleet_oee_pct: number;
+  trips_count: number;
+  active_hours: number;
+}
+
+export interface BackendProductionResponse {
+  period: string;
+  days: number;
+  source: string;
+  total_production_ton: number;
+  avg_fleet_oee_pct: number;
+  achievement_pct: number;
+  data: BackendProductionItem[];
 }
 
 export async function getAnalyticsProduction(
-  params: AnalyticsParams = {}
-): Promise<Production> {
-  const query = new URLSearchParams();
-  if (params.period) {
-    query.append('period', params.period);
-  }
-  const endpoint = `/api/analytics/production${query.toString() ? '?' + query.toString() : ''}`;
-  const response = await apiGet<{ data: Production }>(endpoint);
-  return response.data;
+  period?: 'today' | 'week' | 'month'
+): Promise<BackendProductionResponse> {
+  const query = period ? `?period=${period}` : '';
+  return apiGet<BackendProductionResponse>(`/api/analytics/production${query}`);
 }
 
 // ==========================================
 // LLM Report API
 // ==========================================
 
-export async function postLLMReport(
-  scenario: 'normal' | 'critical' | 'warning'
-): Promise<LLMReport> {
-  return apiPost('/api/llm/report', {
-    scenario,
-  });
+export async function generateLLMReport(payload: LLMReportPayload): Promise<LLMReportResponse> {
+  return apiPost('/api/llm/report', payload);
+}
+
+// ==========================================
+// Supabase Integration for LLM Report History
+// ==========================================
+
+export async function fetchReports(): Promise<ReportRow[]> {
+  const { supabase } = await import('./supabase');
+
+  const { data, error } = await supabase
+    .from('ai_decisions')
+    .select('*')
+    .order('timestamp', { ascending: false })
+    .limit(20);
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function saveReport(reportData: {
+  tanggal: string;
+  shift: string;
+  status: string;
+  summary: string;
+  executive_summary: string;
+  report: object;
+}): Promise<ReportRow> {
+  const { supabase } = await import('./supabase');
+
+  const { data, error } = await supabase
+    .from('ai_decisions')
+    .insert({
+      timestamp: new Date().toISOString(),
+      decision_text: reportData.executive_summary,
+      priority_level: 'INFO',
+      triggered_agents: ['LLM Report'],
+      fleet_summary: JSON.stringify(reportData.report),
+      safety_summary: JSON.stringify(reportData.report),
+      emission_summary: JSON.stringify(reportData.report),
+      reclamation_summary: JSON.stringify(reportData.report),
+      scenario: 'manual_report',
+      llm_engine: 'mistral-7b',
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchReclamationZones(): Promise<ReclamationZoneRow[]> {
+  const { supabase } = await import('./supabase');
+
+  const { data, error } = await supabase
+    .from('reclamation_zones')
+    .select('*');
+
+  if (error) throw error;
+  return data || [];
 }
 
 // ==========================================

@@ -315,8 +315,7 @@ export function useAgentMonitor() {
         const logs: AgentLog[] = [];
 
         (decisions || []).forEach((d: Record<string, unknown>) => {
-          const agents_list = (d.triggered_agents as string || "")
-            .split(",")
+          const agents_list = (Array.isArray(d.triggered_agents) ? d.triggered_agents : (d.triggered_agents as string || "").split(","))
             .map((a: string) => a.trim().toLowerCase())
             .filter(Boolean);
 
@@ -366,13 +365,12 @@ export function useAgentMonitor() {
         table: "ai_decisions",
       }, (payload: { new: Record<string, unknown> }) => {
         const d = payload.new as unknown as AIDecision;
-        const agents_list = (d.triggered_agents || "")
-          .split(",")
+        const agents_list = (Array.isArray(d.triggered_agents) ? d.triggered_agents : (d.triggered_agents as string || "").split(","))
           .map((a: string) => a.trim().toLowerCase())
           .filter(Boolean);
 
         setState(prev => {
-          const newLogs: AgentLog[] = agents_list.map(agentName => {
+          const newLogs: AgentLog[] = agents_list.map((agentName: string) => {
             const logType: LogType = d.priority_level === "high" ? "error" : d.priority_level === "medium" ? "warning" : "decision";
             return {
               id: `${d.id}-${agentName}-${Date.now()}`,
