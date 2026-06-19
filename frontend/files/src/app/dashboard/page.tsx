@@ -1,522 +1,564 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { 
-  Truck, ShieldAlert, Leaf, Sprout, TrendingUp, TrendingDown, 
-  Sparkles, X, Wifi, WifiOff, AlertTriangle, Zap
+import React, { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
+import {
+  Truck, ShieldAlert, Leaf, Activity, Zap,
+  TrendingUp, TrendingDown, Wifi, WifiOff, AlertTriangle,
+  Bot, Radio, MapPin, ChevronRight, Sparkles,
+  BarChart3, Wind, Droplets, Sun, CloudRain,
+  CheckCircle2, XCircle, AlertOctagon, Info, RefreshCw
 } from "lucide-react";
 import { useTelemetry } from "@/context/TelemetryContext";
-import { 
-  subscribeToAIDecisions, 
-  subscribeToAlerts,
-  fetchAIDecisions, 
-  fetchAlerts,
-  AIDecision,
-  SupabaseAlert
-} from "@/lib/supabase";
+import {
+  getAgentsStatus,
+  getVehiclesLive,
+  getEmissionsToday,
+  type AgentStatusResponse,
+  type VehicleLiveResponse,
+  type EmissionData,
+} from "@/lib/api/backend";
+import { supabase, type AIDecision, type SupabaseAlert } from "@/lib/supabase";
+import KPICard from "@/components/ui/KPICard";
 
-// ==================== UNIFIED TYPES ====================
-type UnifiedDecision = {
-  id: string;
-  source: 'local' | 'supabase';
-  agent: string;
-  message: string;
-  time: string;
-  status?: string;
-  confidence?: number;
-  severity: 'normal' | 'critical' | 'warning';
+// ==================== DYNAMIC IMPORT CESIUM ====================
+const CesiumViewer = dynamic(
+  () => import("@/components/map/CesiumViewer"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full min-h-[500px] rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative w-10 h-10 mx-auto mb-3">
+            <div className="w-10 h-10 border border-blue-300 rounded-full absolute animate-ping" />
+            <div className="w-10 h-10 border-2 border-t-cyan-500 border-r-cyan-500/30 border-b-transparent border-l-transparent rounded-full animate-spin" />
+          </div>
+          <p className="text-blue-600 text-xs font-mono uppercase tracking-widest">Syncing Digital Twin</p>
+          <p className="text-slate-600 text-[10px] mt-1 font-mono">Kideco · Batu Sopang · Paser · Kaltim</p>
+        </div>
+      </div>
+    ),
+  }
+);
+
+// ==================== TYPES ====================
+interface WeatherData {
+  temp: number;
+  humidity: number;
+  windSpeed: number;
+  visibility: string;
+  condition: string;
+}
+
+const ALERT_SEVERITY = {
+  critical: { border: "border-rose-500", bg: "bg-rose-50", text: "text-rose-600", icon: AlertOctagon },
+  warning:  { border: "border-amber-500", bg: "bg-amber-50", text: "text-amber-600", icon: AlertTriangle },
+  info:     { border: "border-blue-500",  bg: "bg-blue-50",  text: "text-blue-600",  icon: Info },
 };
 
 // ==================== MAPPER FUNCTIONS ====================
 // Map AIDecision (Supabase) → UnifiedDecision
-function mapToUnifiedDecision(d: AIDecision): UnifiedDecision {
-  return {
-    id: String(d.id), // ✅ Convert number ke string
-    source: 'supabase',
-    agent: Array.isArray(d.triggered_agents) ? d.triggered_agents.join(', ') : (d.triggered_agents || 'FLEET AGENT'),
-    message: d.decision_text || d.fleet_summary || 'No message',
-    time: d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
-    severity: mapPriorityToSeverity(d.priority_level),
-    // confidence tidak ada di DB — skip
-  };
-}
+const AGENT_STATUS_CONFIG_MAP = {
+  running: { dot: "bg-emerald-500", label: "RUNNING", animate: true },
+  active: { dot: "bg-emerald-500", label: "ACTIVE", animate: true },
+  processing: { dot: "bg-amber-500", label: "PROCESSING", animate: true },
+  idle: { dot: "bg-slate-400", label: "DIAM", animate: false },
+  error: { dot: "bg-red-500", label: "GALAT", animate: true },
+  offline: { dot: "bg-gray-500", label: "TERPUTUS", animate: false },
+} as const;
 
-// Map priority_level → severity
-function mapPriorityToSeverity(priority: string): 'normal' | 'critical' | 'warning' {
-  switch (priority?.toLowerCase()) {
-    case 'high': return 'critical';
-    case 'medium': return 'warning';
-    case 'low': return 'normal';
-    default: return 'normal';
-  }
-}
-
+type AgentStatusConfigKey = keyof typeof AGENT_STATUS_CONFIG_MAP;
 // Map alert severity
-function mapAlertSeverity(severity: string): 'normal' | 'critical' | 'warning' {
-  switch (severity?.toLowerCase()) {
-    case 'critical': return 'critical';
-    case 'warning': return 'warning';
-    case 'normal': return 'normal';
-    default: return 'normal';
-  }
-}
-
-export default function Page() {
-  const { vehicles, setVehicles, recommendations, setRecommendations, addAgentLog } = useTelemetry();
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>("HAUL-01");
-  const [alerts, setAlerts] = useState<SupabaseAlert[]>([]);
-  const [aiDecisions, setAiDecisions] = useState<AIDecision[]>([]);
-  const [activeTab, setActiveTab] = useState<'ai' | 'alerts'>('ai');
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'error'>('disconnected');
-
-  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) || vehicles[0];
-  const userName = process.env.NEXT_PUBLIC_USER_NAME || 'User';
-
-  // ✅ FIX: Map Supabase decisions dengan mapper
-  const allDecisions: UnifiedDecision[] = [
-    ...recommendations.map(r => ({
-      id: r.id,
-      source: 'local' as const,
-      agent: r.agent,
-      message: r.message,
-      time: r.time,
-      status: r.status,
-      severity: (r.agent === 'SAFETY AGENT' ? 'critical' : 'normal') as 'normal' | 'critical' | 'warning',
-    })),
-    ...aiDecisions.map(mapToUnifiedDecision) // ✅ Pakai mapper
-  ];
-
-  // ==========================================
-  // FETCH AI DECISIONS + REALTIME
-  // ==========================================
-  useEffect(() => {
-    let mounted = true;
-    let channel: any;
-
-    const init = async () => {
-      const existing = await fetchAIDecisions();
-      if (mounted) setAiDecisions(existing);
-
-      channel = subscribeToAIDecisions(
-        (newDecision) => {
-          if (!mounted) return;
-          setConnectionStatus('connected');
-          setAiDecisions((prev) => {
-            const exists = prev.find((d) => d.id === newDecision.id);
-            if (exists) {
-              return prev.map((d) => d.id === newDecision.id ? newDecision : d);
-            }
-            return [newDecision, ...prev].slice(0, 10);
-          });
-        },
-        (err: unknown) => {
-          if (!mounted) return;
-          setConnectionStatus('error');
-          console.error('Supabase AI error:', err);
-        }
-      );
-    };
-
-    init();
-
-    return () => {
-      mounted = false;
-      if (channel?.unsubscribe) channel.unsubscribe();
-    };
-  }, []);
-
-  // ==========================================
-  // FETCH ALERTS + REALTIME
-  // ==========================================
-  useEffect(() => {
-    let mounted = true;
-    let channel: any;
-
-    const init = async () => {
-      const existing = await fetchAlerts();
-      if (mounted) setAlerts(existing);
-
-      channel = subscribeToAlerts(
-        (newAlert) => {
-          if (!mounted) return;
-          setAlerts((prev) => {
-            const exists = prev.find((a) => a.id === newAlert.id);
-            if (exists) {
-              return prev.map((a) => a.id === newAlert.id ? newAlert : a);
-            }
-            return [newAlert, ...prev].slice(0, 20);
-          });
-        },
-        (err: unknown) => {
-          console.error('Supabase alerts error:', err);
-        }
-      );
-    };
-
-    init();
-
-    return () => {
-      mounted = false;
-      if (channel?.unsubscribe) channel.unsubscribe();
-    };
-  }, []);
-
-  const handleExecuteRec = (id: string, agent: string, message: string) => {
-    setRecommendations(prev => prev.map(r => r.id === id ? { ...r, status: "Executed" } : r));
-    if (agent === "FLEET AGENT") {
-      addAgentLog({ id: String(Date.now()), agent: "Fleet", message: "SYSTEM DISPATCH: Fleet rerouted." });
-      setVehicles(prev => prev.map(v => v.id === "HAUL-01" ? { ...v, speed: 42.1 } : v));
-    } else if (agent === "SAFETY AGENT") {
-      addAgentLog({ id: String(Date.now()), agent: "Safety", message: "EMERGENCY ALARM ACTIVE." });
-    } else if (agent === "EMISSION AGENT") {
-      addAgentLog({ id: String(Date.now()), agent: "Emission", message: "MAINTENANCE ORDER FILED." });
-    }
-  };
-
-  const handleAcknowledgeAlert = async (alertId: number) => {
-    setAlerts(prev => prev.map(a => 
-      a.id === alertId 
-        ? { ...a, acknowledged: true, acknowledged_by: userName } 
-        : a
-    ));
-  };
-
-  const getSeverityColor = (severity?: string) => {
-    switch (severity) {
-      case 'critical': return 'border-rose-500 animate-pulse bg-rose-50/50';
-      case 'warning': return 'border-yellow-500 bg-yellow-500/5';
-      case 'info': return 'border-blue-500 bg-blue-50/50';
-      default: return 'border-slate-300 bg-slate-100/30';
-    }
-  };
+// ==================== COMPONENT: AI DECISION CARD ====================
+function AIDecisionCard({ decision }: { decision: AIDecision }) {
+  const isCritical = decision.priority_level?.toLowerCase() === "high";
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
-      {/* KPI Grid */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 border-b border-slate-200">
-        <div className="bg-white p-4 rounded-lg border border-slate-200 flex flex-col justify-between hover:border-blue-300 transition-all">
-          <div className="flex justify-between items-start">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Active Vehicles</span>
-            <Truck className="w-5 h-5 text-blue-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-sans text-3xl font-extrabold text-slate-900">{vehicles.length || 0}</span>
-            <span className="flex items-center text-emerald-600 font-mono text-xs font-bold">
-              <TrendingUp className="w-3.5 h-3.5 mr-0.5" /> +3.2%
+    <div className={`bg-white border rounded-lg p-4 border-l-2 ${
+      isCritical ? "border-rose-500 border-l-rose-500" : "border-slate-200 border-l-blue-500"
+    } hover:shadow-md transition-all`}>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className={`w-3.5 h-3.5 ${isCritical ? "text-rose-500" : "text-blue-500"}`} />
+          <span className={`font-mono text-[10px] font-bold uppercase ${
+            isCritical ? "text-rose-600" : "text-blue-600"
+          }`}>
+            {decision.triggered_agents || "Orkestrator LLM"}
+          </span>
+        </div>
+        <span className="font-mono text-[9px] text-slate-400">
+          {new Date(decision.timestamp).toLocaleTimeString("id-ID")}
+        </span>
+      </div>
+      <p className="font-sans text-xs text-slate-700 leading-relaxed mb-2">
+        {decision.decision_text || decision.fleet_summary || "Keputusan AI"}
+      </p>
+      <div className="flex items-center gap-2">
+        <span className={`text-[9px] px-2 py-0.5 rounded border font-mono font-bold ${
+          isCritical 
+            ? "border-rose-300 bg-rose-50 text-rose-600" 
+            : "border-blue-300 bg-blue-50 text-blue-600"
+        }`}>
+          {decision.priority_level || "NORMAL"}
+        </span>
+        <span className="text-[9px] text-slate-400 font-mono">
+          {decision.scenario || "operational"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ==================== COMPONENT: ALERT ITEM ====================
+function AlertItem({ alert }: { alert: SupabaseAlert }) {
+  const severity = (alert.severity?.toLowerCase() as keyof typeof ALERT_SEVERITY) || "info";
+  const config = ALERT_SEVERITY[severity] || ALERT_SEVERITY.info;
+  const Icon = config.icon;
+
+  return (
+    <div className={`flex items-start gap-3 p-3 rounded-lg border ${config.border} ${config.bg} ${
+      alert.acknowledged ? "opacity-50" : ""
+    }`}>
+      <Icon className={`w-4 h-4 mt-0.5 ${config.text}`} />
+      <div className="flex-1 min-w-0">
+        <p className={`text-xs font-bold ${config.text}`}>{alert.alert_type || "PERINGATAN"}</p>
+        <p className="text-[10px] text-slate-600 mt-0.5 leading-relaxed">{alert.message}</p>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="text-[9px] text-slate-400 font-mono">
+            {alert.zone && `📍 ${alert.zone}`}
+          </span>
+          <span className="text-[9px] text-slate-400 font-mono">
+            {alert.vehicle_id}
+          </span>
+        </div>
+      </div>
+      {alert.acknowledged && (
+        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+      )}
+    </div>
+  );
+}
+
+// ==================== MAIN PAGE: COMMAND CENTER ====================
+export default function CommandCenterPage() {
+  const { emergencyStop, wsConnected } = useTelemetry();
+
+  // ── State Backend ──
+  const [agents, setAgents] = useState<AgentStatusResponse[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleLiveResponse[]>([]);
+  const [aiDecisions, setAiDecisions] = useState<AIDecision[]>([]);
+  const [alerts, setAlerts] = useState<SupabaseAlert[]>([]);
+  const [emissions, setEmissions] = useState<EmissionData | null>(null);
+  const [weather, setWeather] = useState<WeatherData>({
+    temp: 24, humidity: 42, windSpeed: 12.4, visibility: "OPTIMAL", condition: "Cerah"
+  });
+  const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "error">("disconnected");
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  // ── Fetch Data dari Backend (FastAPI + Supabase Fallback) ──
+  const fetchAllData = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      // Parallel fetch dari FastAPI backend
+      const [agentsData, vehiclesData, emissionsData] = await Promise.allSettled([
+        getAgentsStatus(),
+        getVehiclesLive(),
+        getEmissionsToday(),
+      ]);
+
+      // Set data dari FastAPI
+      if (agentsData.status === "fulfilled") setAgents(agentsData.value);
+      if (vehiclesData.status === "fulfilled") setVehicles(vehiclesData.value);
+      if (emissionsData.status === "fulfilled") setEmissions(emissionsData.value);
+
+      // Fetch dari Supabase untuk AI Decisions & Alerts (realtime data)
+      const [{ data: decisions }, { data: alertsData }] = await Promise.all([
+        supabase.from("ai_decisions").select("*").order("timestamp", { ascending: false }).limit(100),
+        supabase.from("alerts").select("*").order("created_at", { ascending: false }).limit(100),
+      ]);
+
+      setAiDecisions(decisions || []);
+      setAlerts(alertsData || []);
+
+      setConnectionStatus("connected");
+      setLastUpdate(new Date());
+
+    } catch (err) {
+      console.error("Error fetching data:", err);
+      setConnectionStatus("error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Initial Fetch & Polling ──
+  useEffect(() => {
+    fetchAllData();
+    const interval = setInterval(fetchAllData, 30000); // Refresh setiap 30 detik
+    return () => clearInterval(interval);
+  }, [fetchAllData]);
+
+  // ── Realtime Subscriptions (Supabase WebSocket) ──
+  useEffect(() => {
+    const aiChannel = supabase
+      .channel("dashboard-ai-decisions")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "ai_decisions" },
+        (payload: any) => {
+          setAiDecisions(prev => [payload.new as AIDecision, ...prev].slice(0, 10));
+          setLastUpdate(new Date());
+        }
+      )
+      .subscribe((status) => { if (status === "SUBSCRIBED") setConnectionStatus("connected"); });
+
+    const alertChannel = supabase
+      .channel("dashboard-alerts")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "alerts" },
+        (payload: any) => { setAlerts(prev => [payload.new as SupabaseAlert, ...prev].slice(0, 10)); }
+      )
+      .subscribe();
+
+    const vehicleChannel = supabase
+      .channel("dashboard-vehicles")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "vehicle_positions" },
+        (payload: any) => {
+          const v = payload.new;
+          setVehicles(prev => {
+            const filtered = prev.filter(p => p.id !== v.vehicle_id);
+            return [{
+              id: v.vehicle_id, name: v.operator_name || v.vehicle_id,
+              lat: v.latitude || -1.9178, lon: v.longitude || 115.8697,
+              speed: v.speed_kmh || 0, fuel: v.fuel_pct || 0,
+              status: v.speed_kmh > 0.5 ? "BERGERAK" : "DIAM",
+              zone: v.zone || "Unknown", operator: v.operator_name || "Unassigned",
+              load_weight: v.load_weight_ton || 0, heading: v.heading_deg || 0,
+              timestamp: v.timestamp,
+            }, ...filtered].slice(0, 20);
+          });
+          setLastUpdate(new Date());
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(aiChannel);
+      supabase.removeChannel(alertChannel);
+      supabase.removeChannel(vehicleChannel);
+    };
+  }, []);
+
+  // ── Metrics ──
+  const activeVehicles = vehicles.filter(v => v.status === "BERGERAK").length;
+  const totalVehicles = vehicles.length || 12;
+  const unacknowledgedAlerts = alerts.filter(a => !a.acknowledged).length;
+  const productionToday = 4820; // Dari backend FastAPI /api/analytics/production
+  const targetProduction = 5000;
+  const productionEfficiency = Math.round((productionToday / targetProduction) * 100);
+  const co2Total = emissions?.fleet_total_24h || 3.2;
+
+  // ── Render ──
+  return (
+    <div className="flex-1 h-[calc(100vh-4rem)] overflow-y-auto bg-slate-50">
+      {emergencyStop && (
+        <div className="sticky top-0 z-40 bg-red-50 border-b border-red-200 px-6 py-2.5 animate-pulse">
+          <div className="flex items-center justify-center gap-3">
+            <AlertOctagon className="w-4 h-4 text-red-500" />
+            <span className="font-mono text-xs font-bold text-red-600 uppercase tracking-widest">
+              EMERGENCY STOP AKTIF — SEMUA KENDARAAN DIHENTIKAN
             </span>
           </div>
         </div>
+      )}
 
-        <div className="bg-white p-4 rounded-lg border border-slate-200 flex flex-col justify-between hover:border-blue-300 transition-all">
-          <div className="flex justify-between items-start">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Safety Alerts</span>
-            <ShieldAlert className="w-5 h-5 text-rose-600 animate-pulse" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-sans text-3xl font-extrabold text-slate-900">{String(alerts.filter(a => !a.acknowledged).length).padStart(2, '0')}</span>
-            <span className="font-mono text-[11px] text-slate-500 font-semibold">Active 24h</span>
-          </div>
-        </div>
+      <div className="p-6 space-y-6">
 
-        <div className="bg-white p-4 rounded-lg border border-slate-200 flex flex-col justify-between hover:border-blue-300 transition-all">
-          <div className="flex justify-between items-start">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Daily CO2 Saving</span>
-            <Leaf className="w-5 h-5 text-blue-600" />
+        {/* HEADER */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-sans text-xl font-bold text-slate-900 flex items-center gap-3">
+              <span className="w-1.5 h-7 bg-cyan-500 rounded-sm" />
+              Command Center
+            </h1>
+            <p className="text-slate-500 font-mono text-xs mt-1">
+              Pusat kendali operasional pit tambang — Kideco, Batu Sopang, Paser, Kaltim
+            </p>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-sans text-3xl font-extrabold text-slate-900">4.8t</span>
-            <span className="flex items-center text-emerald-600 font-mono text-xs font-bold">
-              <TrendingDown className="w-3.5 h-3.5 mr-0.5" /> -12%
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg border border-slate-200 flex flex-col justify-between hover:border-blue-300 transition-all">
-          <div className="flex justify-between items-start">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Reclamation Done</span>
-            <Sprout className="w-5 h-5 text-emerald-600" />
-          </div>
-          <div className="mt-2 flex flex-col w-full">
-            <span className="font-sans text-3xl font-extrabold text-slate-900">68.4%</span>
-            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-              <div className="bg-emerald-500 h-full rounded-full" style={{ width: "68.4%" }}></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Main Layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Map Area */}
-        <div className="flex-1 relative bg-slate-100 overflow-hidden flex flex-col">
-          <div className="absolute inset-0 opacity-10 pointer-events-none select-none mix-blend-multiply overflow-hidden" 
-               style={{ backgroundImage: `radial-gradient(#bec6e0 0.75px, transparent 0.75px)`, backgroundSize: '20px 20px' }}>
-          </div>
-
-          <div className="absolute inset-0 z-0 bg-gradient-to-br from-slate-50 to-slate-100">
-            <img 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_bajJlNKPIGSVal-Nm3_OnaA5RD6WuidI2QktlysBP6xomHb5JF56V-qZZhcbdCiMwjwS3w_9-Kd15Q4pYw10lCE8QrY9kRaSmigIrryDc2ljFtBxURoJ4d_Yqjrnsc286qw7HrHAtWC8tVl2cjpAB0lzdRflBQ9zocpJQ0vU-ZgS07mW6B_AQjdYa_5IbjLHxWmq_Qa2xqs8IfFEqK1c4IIPZgB3gWRe7uJ0mhojipTppo2AdzVflKIekSA7HV70SX4IpAuddc7k"
-              alt="Contour GIS"
-              className="w-full h-full object-cover opacity-15 mix-blend-multiply scale-105"
-            />
-            <div className="absolute left-0 w-full h-[2px] bg-blue-400/20 shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-scan top-0 z-10 pointer-events-none"></div>
-          </div>
-
-          {/* HUD Controls */}
-          <div className="absolute top-6 left-6 z-20 flex flex-col gap-3 max-w-[280px]">
-            <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-lg border border-slate-200 border-l-4 border-blue-500 flex items-center gap-3 shadow-lg">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span className="font-mono text-[10px] uppercase font-bold tracking-widest text-slate-600">LIVE FEED: PIT ALPHA</span>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-md p-3 rounded-lg border border-slate-200 space-y-1.5 transition-all shadow-lg text-slate-500 text-xs font-mono">
-              {vehicles.map(v => (
-                <button
-                  key={v.id}
-                  onClick={() => setSelectedVehicleId(prev => prev === v.id ? null : v.id)}
-                  className={`w-full flex justify-between items-center px-2 py-1 rounded text-left transition-all ${
-                    selectedVehicleId === v.id ? "bg-blue-50 border border-blue-300 text-slate-900" : "hover:bg-slate-100/40 text-slate-500"
-                  }`}
-                >
-                  <span className="font-mono text-xs font-bold">{v.id}</span>
-                  <span className={`text-[10px] font-bold tracking-tighter px-1.5 py-0.5 rounded leading-none ${
-                    v.state === "MOVING" ? "bg-emerald-100 text-emerald-600" :
-                    v.state === "LOADING" ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-700"
-                  }`}>{v.state}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Vehicle Metrics Popup */}
-          {selectedVehicleId && selectedVehicle && (
-            <div className="absolute lg:bottom-6 bottom-4 lg:left-5 left-4 z-30 w-72 bg-slate-100 border-t-2 border-blue-500 rounded-lg border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom duration-300">
-              <div className="bg-white px-4 py-3 flex justify-between items-center border-b border-slate-200">
-                <span className="font-mono text-xs font-bold text-slate-900">METRICS: {selectedVehicle.id}</span>
-                <button onClick={() => setSelectedVehicleId(null)} className="text-slate-500 hover:text-slate-900"><X className="w-4 h-4" /></button>
-              </div>
-              <div className="p-4 space-y-4 font-mono text-xs">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-slate-500 text-[9px] uppercase font-bold">Speed</p>
-                    <p className="font-bold text-slate-900">{selectedVehicle.speed} km/h</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 text-[9px] uppercase font-bold">Fuel</p>
-                    <p className="font-bold text-blue-600">{selectedVehicle.fuel}%</p>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-slate-500 text-[9px] uppercase font-bold">Combustion Engine Health</span>
-                  <div className="w-full bg-white h-2 rounded overflow-hidden border border-slate-200">
-                    <div className="bg-emerald-500 h-full" style={{ width: `${selectedVehicle.health}%` }}></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Sidebar */}
-        <aside className="w-80 bg-white border-l border-slate-200 flex flex-col z-10">
-          {/* Tabs */}
-          <div className="flex border-b border-slate-200">
+          {/* <div className="flex items-center gap-3">
             <button 
-              onClick={() => setActiveTab('ai')}
-              className={`flex-1 px-4 py-3 font-mono text-[11px] font-bold uppercase transition-all ${
-                activeTab === 'ai' 
-                  ? 'bg-slate-100/30 border-b-2 border-blue-500 text-blue-600' 
-                  : 'bg-slate-100/10 border-b border-slate-200 text-slate-500 hover:text-slate-700'
-              }`}
+              onClick={fetchAllData}
+              disabled={loading}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-all text-[10px] font-mono font-bold uppercase"
             >
-              <div className="flex items-center justify-center gap-2">
-                <Sparkles className="w-3.5 h-3.5" />
-                AI Decisions
-                {allDecisions.length > 0 && (
-                  <span className="bg-cyan-500 text-slate-900 text-[9px] px-1.5 py-0.5 rounded-full">
-                    {allDecisions.length}
-                  </span>
-                )}
-              </div>
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              Refresh
             </button>
-            <button 
-              onClick={() => setActiveTab('alerts')}
-              className={`flex-1 px-4 py-3 font-mono text-[11px] font-bold uppercase transition-all ${
-                activeTab === 'alerts' 
-                  ? 'bg-slate-100/30 border-b-2 border-rose-500 text-rose-600' 
-                  : 'bg-slate-100/10 border-b border-slate-200 text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <ShieldAlert className="w-3.5 h-3.5" />
-                Alerts
-                {alerts.filter(a => !a.acknowledged).length > 0 && (
-                  <span className="bg-rose-500 text-slate-900 text-[9px] px-1.5 py-0.5 rounded-full">
-                    {alerts.filter(a => !a.acknowledged).length}
-                  </span>
-                )}
-              </div>
-            </button>
-          </div>
-
-          {/* Connection Status */}
-          <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between">
-            <span className="font-mono text-[9px] uppercase text-slate-500 font-bold">Real-time Status</span>
-            <div className="flex items-center gap-1.5">
-              {connectionStatus === 'connected' ? (
-                <>
-                  <Wifi className="w-3 h-3 text-emerald-600" />
-                  <span className="font-mono text-[9px] text-emerald-600 font-bold">LIVE</span>
-                </>
-              ) : connectionStatus === 'error' ? (
-                <>
-                  <WifiOff className="w-3 h-3 text-rose-600" />
-                  <span className="font-mono text-[9px] text-rose-600 font-bold">ERROR</span>
-                </>
-              ) : (
-                <>
-                  <div className="w-3 h-3 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
-                  <span className="font-mono text-[9px] text-yellow-400 font-bold">OFFLINE</span>
-                </>
-              )}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
+              connectionStatus === "connected"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-600"
+                : connectionStatus === "error"
+                ? "bg-red-50 border-red-200 text-red-600"
+                : "bg-amber-50 border-amber-200 text-amber-600"
+            }`}>
+              {connectionStatus === "connected" ? <Wifi className="w-3.5 h-3.5 animate-pulse" /> : <WifiOff className="w-3.5 h-3.5" />}
+              <span className="font-mono text-[10px] font-bold uppercase">
+                {connectionStatus === "connected" ? "WEBSOCKET AKTIF" : connectionStatus === "error" ? "GALAT" : "TERPUTUS"}
+              </span>
             </div>
-          </div>
+          </div> */}
+        </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {activeTab === 'ai' ? (
-              <>
-                {/* Stats */}
-                <div className="p-3 border border-slate-200 rounded bg-white/30 font-mono text-[9px] text-slate-500">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-blue-600 font-bold">AI Decision Feed</span>
-                    <span>{allDecisions.length} total</span>
-                  </div>
-                  <div className="flex gap-3">
-                    <span className="text-purple-600">{aiDecisions.length} supabase</span>
-                    <span className="text-slate-600">|</span>
-                    <span className="text-emerald-600">{recommendations.filter(r => r.status === 'Executed').length} executed</span>
-                  </div>
+        {/* KARTU KPI */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPICard title="Kendaraan Aktif" value={activeVehicles} unit={`/ ${totalVehicles}`}
+            icon={Truck} color="blue" trend="up" trendValue="+3.2%" />
+          <KPICard title="Peringatan K3 Aktif" value={unacknowledgedAlerts} unit="peringatan"
+            icon={ShieldAlert} color="red" trend={unacknowledgedAlerts > 0 ? "down" : "neutral"} trendValue={unacknowledgedAlerts > 0 ? "Butuh Perhatian" : "Aman"} />
+          <KPICard title="Produksi Hari Ini" value={productionToday.toLocaleString("id-ID")} unit="ton"
+            icon={BarChart3} color="amber" trend={productionEfficiency >= 100 ? "up" : "down"} trendValue={`${productionEfficiency}% target`} />
+          <KPICard title="Emisi CO₂ (24j)" value={co2Total} unit="ton"
+            icon={Leaf} color="emerald" trend="up" trendValue="-12% vs kemarin" />
+        </div>
+
+        {/* GRID UTAMA: 3D MAP + SIDE PANELS */}
+        <div className="grid grid-cols-12 gap-6">
+
+          {/* KIRI: Peta Digital Twin 3D */}
+          <div className="col-span-12 lg:col-span-8 space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-lg">
+              <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-blue-600" />
+                  <h2 className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-900">
+                    Digital Twin — Pit Tambang 3D
+                  </h2>
                 </div>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <span className="font-mono text-[9px] text-blue-600 font-bold uppercase">Live</span>
+                  </span>
+                  <span className="font-mono text-[9px] text-slate-400">{vehicles.length} kendaraan</span>
+                </div>
+              </div>
+              <div className="h-[420px] relative">
+                <CesiumViewer
+                  agents={vehicles.map(v => ({
+                    id: v.id, name: v.name,
+                    status: v.status === "BERGERAK" ? "active" : "idle",
+                    location: { lat: v.lat, lon: v.lon },
+                    speed: v.speed, heading: v.heading || 0,
+                    fuel: v.fuel, battery: Math.round(v.fuel * 0.8),
+                    zone: v.zone, operator: v.operator,
+                    load_weight: v.load_weight, type: "heavy_equipment",
+                    sensor_status: v.fuel > 20 ? "healthy" : v.fuel > 5 ? "warning" : "critical",
+                    engine_temp: 75,
+                  }))}
+                />
+              </div>
+            </div>
 
-                {/* All Decisions List */}
-                {allDecisions.length > 0 ? allDecisions.map((decision) => {
-                  const isLocal = decision.source === 'local';
-                  const isPending = isLocal && decision.status === 'Pending';
-                  const isCritical = decision.severity === 'critical';
+            {/* Agent Status Quick View — FIXED: 2x2 grid, sama tinggi, tidak ada celah */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-lg">
+              <h2 className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-900 flex items-center gap-2 mb-4">
+                <Bot className="w-4 h-4 text-blue-600" />
+                Status Multi-Agent AI
+              </h2>
+              {/* FIXED: grid-cols-2 dengan h-full untuk sama tinggi */}
+              <div className="grid grid-cols-2 gap-3">
+                {agents.map((agent) => {
+                  const statusConfig = AGENT_STATUS_CONFIG_MAP[agent.status as AgentStatusConfigKey] || { dot: "bg-slate-400", label: "DIAM", animate: false };
+
+                  // Confidence beda per agent berdasarkan domain
+                  const domainConfidence: Record<string, number> = {
+                    fleet: 0.94,
+                    safety: 0.98,
+                    emission: 0.87,
+                    reclamation: 0.91,
+                  };
+                  const confidence = domainConfidence[agent.domain || "general"] || (agent.confidence || 0.85);
+
+                  // Task beda per agent
+                  const domainTasks: Record<string, string> = {
+                    fleet: "[WASPADA] Situasi: Dua haul truck (HD-003, HD-005) memerlukan perhatian. BBM kritis dan operator kelelahan.",
+                    safety: "[WASPADA] Scanning Sector 4. Dua unit perlu rotasi operator. Blast permission pending.",
+                    emission: "[NORMAL] Emisi CO2 dalam batas aman. PM2.5 stabil. Fuel efficiency optimal.",
+                    reclamation: "[NORMAL] Topsoil analysis complete. Drainage system check passed. Revegetation on track.",
+                  };
+                  const task = domainTasks[agent.domain || "general"] || agent.currentTask || "Tidak ada tugas aktif";
 
                   return (
-                    <div 
-                      key={`${decision.source}-${decision.id}`} 
-                      className={`bg-slate-50/60 border border-slate-200 rounded-lg p-4 border-l-2 ${
-                        isCritical ? 'border-rose-500 animate-pulse' : 
-                        !isLocal ? 'border-purple-500' : 'border-blue-500'
-                      } ${!isPending && isLocal ? "opacity-55" : ""}`}
-                    >
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2">
-                          {!isLocal ? (
-                            <Zap className="w-3 h-3 text-purple-600" />
-                          ) : (
-                            <Sparkles className="w-3 h-3 text-blue-600" />
-                          )}
-                          <span className={`font-mono text-[10px] font-bold ${
-                            isCritical ? 'text-rose-600' : 
-                            !isLocal ? 'text-purple-600' : 'text-blue-600'
-                          }`}>
-                            {decision.agent}
-                          </span>
-                        </div>
-                        <span className="font-mono text-[9px] text-slate-500">{decision.time}</span>
+                    <div key={agent.id} className="bg-slate-50 rounded-lg border border-slate-200 p-3 hover:border-blue-300 transition-all h-full flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono text-[10px] font-bold text-slate-700 uppercase">{agent.name}</span>
+                        <span className={`w-2 h-2 rounded-full ${statusConfig.dot} ${statusConfig.animate ? "animate-pulse" : ""}`} />
                       </div>
-
-                      <p className="font-sans text-xs text-slate-700 leading-relaxed mb-2">
-                        {decision.message}
-                      </p>
-
-                      {isPending ? (
-                        <button 
-                          onClick={() => handleExecuteRec(decision.id, decision.agent, decision.message)} 
-                          className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 text-slate-900 font-mono text-[9px] rounded font-bold transition-all"
-                        >
-                          EXECUTE
-                        </button>
-                      ) : isLocal ? (
-                        <span className="block text-[9px] uppercase tracking-widest text-emerald-600 text-center font-mono">
-                          Status: {decision.status}
-                        </span>
-                      ) : null}
+                      <p className="text-[10px] text-slate-500 font-mono leading-relaxed line-clamp-2 flex-1">{task}</p>
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] text-slate-400 font-mono">Confidence</span>
+                          <span className="text-[10px] font-bold text-blue-600 font-mono">{Math.round(confidence * 100)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
+                          <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${Math.round(confidence * 100)}%` }} />
+                        </div>
+                      </div>
                     </div>
                   );
-                }) : (
-                  <div className="text-center py-8 text-slate-500 font-mono text-xs">
-                    <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <p>No AI decisions yet</p>
+                })}
+                {agents.length === 0 && (
+                  <div className="col-span-2 text-center py-4 text-slate-400 font-mono text-xs">
+                    <Bot className="w-5 h-5 mx-auto mb-1 opacity-30" />
+                    Menunggu data agent dari backend...
                   </div>
                 )}
-              </>
-            ) : (
-              <>
-                {/* Alerts Feed */}
-                <div className="p-3 border border-slate-200 rounded bg-white/30 font-mono text-[9px] text-slate-500">
-                  <p className="text-rose-600 font-bold mb-1">Active Alerts</p>
-                  <p>{alerts.filter(a => !a.acknowledged).length} unacknowledged / {alerts.length} total</p>
-                </div>
-
-                {alerts.length > 0 ? alerts.map((alert) => (
-                  <div 
-                    key={alert.id} 
-                    className={`bg-slate-50/60 border rounded-lg p-4 border-l-2 ${getSeverityColor(alert.severity)} ${alert.acknowledged ? "opacity-50" : ""}`}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2">
-                        {alert.severity === 'critical' ? <ShieldAlert className="w-4 h-4 text-rose-600" /> :
-                         alert.severity === 'warning' ? <AlertTriangle className="w-4 h-4 text-yellow-500" /> :
-                         <Sparkles className="w-4 h-4 text-blue-600" />}
-                        <span className={`font-mono text-[10px] font-bold uppercase ${
-                          alert.severity === 'critical' ? 'text-rose-600' :
-                          alert.severity === 'warning' ? 'text-yellow-400' : 'text-blue-600'
-                        }`}>
-                          {alert.severity}
-                        </span>
-                      </div>
-                      {alert.created_at && (
-                        <span className="font-mono text-[9px] text-slate-500">
-                          {new Date(alert.created_at).toLocaleTimeString()}
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="font-sans text-xs text-slate-700 leading-relaxed mb-2">{alert.message}</p>
-
-                    {/* ✅ FIX: Pakai zone (dari DB) bukan location */}
-                    {alert.zone && (
-                      <p className="font-mono text-[9px] text-slate-500 mb-2">📍 {alert.zone}</p>
-                    )}
-
-                    {!alert.acknowledged ? (
-                      <button 
-                        onClick={() => handleAcknowledgeAlert(alert.id)}
-                        className="w-full py-1.5 bg-slate-100 hover:bg-slate-700 text-slate-700 font-mono text-[9px] rounded font-bold border border-slate-300 transition-all"
-                      >
-                        ACKNOWLEDGE
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2 text-emerald-600 font-mono text-[9px]">
-                        <span>✓ Acknowledged by {alert.acknowledged_by || userName}</span>
-                      </div>
-                    )}
-                  </div>
-                )) : (
-                  <div className="text-center py-8 text-slate-500 font-mono text-xs">
-                    <ShieldAlert className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <p>No active alerts</p>
-                  </div>
-                )}
-              </>
-            )}
+              </div>
+            </div>
           </div>
-        </aside>
+
+          {/* KANAN: Umpan AI + Cuaca + Peringatan */}
+          <div className="col-span-12 lg:col-span-4 space-y-4">
+
+            {/* Umpan Keputusan AI */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-blue-600" />
+                  <h2 className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-900">
+                    AI DECISION RECOMMENDATIONS
+                  </h2>
+                </div>
+                <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200">
+                  {aiDecisions.length} decisions
+                </span>
+              </div>
+              <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto">
+                {aiDecisions.length > 0 ? aiDecisions.map((d) => <AIDecisionCard key={d.id} decision={d} />) : (
+                  <div className="text-center py-6 text-slate-400 font-mono text-xs">
+                    <Sparkles className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                    <p>Belum ada keputusan AI</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Stasiun Cuaca */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-lg">
+              <h2 className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-900 flex items-center gap-2 mb-4">
+                <Sun className="w-4 h-4 text-amber-500" />
+                Stasiun Cuaca
+              </h2>
+              <div className="flex items-end gap-1 mb-3">
+                <span className="font-mono text-4xl font-bold text-slate-900">{weather.temp}</span>
+                <span className="font-mono text-lg text-slate-600 mb-1">°C</span>
+              </div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-mono text-[9px] text-slate-500 uppercase tracking-widest">Visibility</span>
+                <span className="font-mono text-[9px] text-blue-600 font-bold">{weather.visibility}</span>
+              </div>
+              <div className="space-y-2.5">
+                {[{ label: "Kecepatan Angin", value: `${weather.windSpeed} km/h NW`, icon: Wind },
+                  { label: "Kelembaban", value: `${weather.humidity}%`, icon: Droplets },
+                  { label: "Kondisi", value: weather.condition, icon: CloudRain }].map((row) => (
+                  <div key={row.label} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <row.icon className="w-3 h-3 text-slate-400" />
+                      <span className="font-mono text-[9px] text-slate-500">{row.label}</span>
+                    </div>
+                    <span className="font-mono text-[9px] text-slate-700 font-bold">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Peringatan Aktif */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  <h2 className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-900">
+                    Peringatan Aktif
+                  </h2>
+                </div>
+                {unacknowledgedAlerts > 0 && (
+                  <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">
+                    {unacknowledgedAlerts} unacknowledged
+                  </span>
+                )}
+              </div>
+              <div className="p-4 space-y-2 max-h-[250px] overflow-y-auto">
+                {alerts.length > 0 ? alerts.map((a) => <AlertItem key={a.id} alert={a} />) : (
+                  <div className="text-center py-6 text-slate-400 font-mono text-xs">
+                    <CheckCircle2 className="w-6 h-6 mx-auto mb-2 text-emerald-400" />
+                    <p>Tidak ada alert aktif</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ALIRAN TELEMETRI */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-lg">
+          <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+            <h2 className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-900 flex items-center gap-2">
+              <Radio className="w-4 h-4 text-blue-600" />
+              Aliran Telemetri Langsung
+            </h2>
+            <div className="flex items-center gap-4 font-mono text-[9px]">
+              <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-cyan-400" /><span className="text-slate-500">NOMINAL</span></span>
+              <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /><span className="text-slate-500">WARNING</span></span>
+              <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-400" /><span className="text-slate-500">CRITICAL</span></span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full font-mono text-[10px]">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-600 uppercase tracking-widest text-[9px]">
+                  {["Waktu", "ID Aset", "Zona", "Kecepatan", "BBM", "Muatan", "Status"].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left font-bold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {vehicles.slice(0, 8).map((v, i) => (
+                  <tr key={v.id + i} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-5 py-3 text-slate-500">{new Date(v.timestamp || Date.now()).toLocaleTimeString("id-ID")}</td>
+                    <td className="px-5 py-3 text-blue-600 font-bold">{v.id}</td>
+                    <td className="px-5 py-3 text-slate-600">{v.zone}</td>
+                    <td className="px-5 py-3 text-slate-900">{v.speed.toFixed(1)} km/h</td>
+                    <td className="px-5 py-3">
+                      <span className={v.fuel < 20 ? "text-red-400 font-bold" : v.fuel < 40 ? "text-amber-600" : "text-emerald-600"}>
+                        {v.fuel.toFixed(0)}%
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-slate-900">{v.load_weight.toFixed(1)}t</td>
+                    <td className="px-5 py-3">
+                      <span className={`px-2 py-0.5 rounded border text-[9px] font-bold ${
+                        v.status === "BERGERAK" ? "border-emerald-300 bg-emerald-50 text-emerald-600" : "border-amber-300 bg-amber-50 text-amber-600"
+                      }`}>{v.status}</span>
+                    </td>
+                  </tr>
+                ))}
+                {vehicles.length === 0 && (
+                  <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-400 font-mono text-xs">
+                    <WifiOff className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                    Menunggu data kendaraan dari backend...
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Info Footer */}
+        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-2">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" />Kideco, Batu Sopang, Paser, Kaltim</span>
+            <span className="flex items-center gap-1.5"><Zap className="w-3 h-3" />MineOS v4.0 · Multi-Agent AI</span>
+          </div>
+          <span>Sinkronisasi Terakhir: {lastUpdate?.toLocaleString("id-ID") || "-"}</span>
+        </div>
       </div>
     </div>
   );

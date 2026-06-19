@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, Wifi, WifiOff, X, Clock, Compass, PanelLeft, PanelLeftClose } from "lucide-react";
-import { useTelemetry } from "@/context/TelemetryContext";
+import { Bell, X, Clock, Compass, PanelLeft, PanelLeftClose } from "lucide-react";
 
 const notifications = [
   { id: 1, type: "error",   title: "Drill Unit Gamma — ERROR",    desc: "Baterai kritis 23%, segera cek.",           time: "2 mnt lalu" },
@@ -22,8 +21,7 @@ interface NavbarProps {
 }
 
 export default function Navbar({ onToggleSidebar, sidebarOpen }: NavbarProps) {
-  const [time, setTime] = useState("");
-  const { wsConnected } = useTelemetry();
+  const [time, setTime] = useState<string | null>(null); // null = tidak render di server
   const [openNotif, setOpenNotif] = useState(false);
   const [dismissed, setDismissed] = useState<number[]>([]);
 
@@ -33,10 +31,10 @@ export default function Navbar({ onToggleSidebar, sidebarOpen }: NavbarProps) {
       const h  = String(now.getHours()).padStart(2, "0");
       const m  = String(now.getMinutes()).padStart(2, "0");
       const s  = String(now.getSeconds()).padStart(2, "0");
-      const ms = String(now.getMilliseconds()).padStart(3, "0");
-      setTime(`${h}:${m}:${s}:${ms}`);
+      setTime(`${h}:${m}:${s}`);
     };
-    const interval = setInterval(updateTime, 1);
+    updateTime(); // Set langsung saat mount
+    const interval = setInterval(updateTime, 1000); // Update tiap 1 detik
     return () => clearInterval(interval);
   }, []);
 
@@ -46,7 +44,6 @@ export default function Navbar({ onToggleSidebar, sidebarOpen }: NavbarProps) {
     <header className="fixed top-0 left-0 right-0 z-50 flex justify-between items-center px-4 bg-white/80 backdrop-blur-md border-b border-slate-200 h-16 w-full select-none">
       {/* Kiri: Toggle + Logo & Judul */}
       <div className="flex items-center gap-3">
-        {/* Toggle Sidebar Button */}
         <button
           onClick={onToggleSidebar}
           className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all duration-200"
@@ -69,29 +66,14 @@ export default function Navbar({ onToggleSidebar, sidebarOpen }: NavbarProps) {
         </div>
       </div>
 
-      {/* Kanan: Status + Jam + Notifikasi */}
+      {/* Kanan: Jam + Notifikasi */}
       <div className="flex items-center gap-4">
-        {/* Status koneksi */}
-        <div className={`hidden md:flex items-center gap-2 px-3 py-1 rounded border ${
-          wsConnected
-            ? "bg-emerald-50 border-emerald-200 text-emerald-600"
-            : "bg-amber-50 border-amber-200 text-amber-600"
-        }`}>
-          {wsConnected
-            ? <Wifi className="w-3.5 h-3.5 animate-pulse" />
-            : <WifiOff className="w-3.5 h-3.5" />
-          }
-          <span className="font-mono text-[10px] font-bold uppercase tracking-wider">
-            NET: {wsConnected ? "SECURED (14ms)" : "REST DIRECT"}
-          </span>
-        </div>
-
         <div className="h-4 w-px bg-slate-200 hidden md:block" />
 
-        {/* Jam */}
+        {/* Jam — hanya render di client */}
         <div className="flex items-center gap-2 text-slate-500 font-mono text-[11px]">
           <Clock className="w-3.5 h-3.5 text-blue-500" />
-          <span className="tracking-widest">{time || "00:00:00:000"}</span>
+          <span className="tracking-widest">{time ?? "--:--:--"}</span>
         </div>
 
         <div className="h-4 w-px bg-slate-200" />
