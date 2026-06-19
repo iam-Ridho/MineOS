@@ -62,29 +62,29 @@ async def generate_report(req: ReportRequest, user=Depends(auth)):
                     agent_reports.append({
                         "agent": "Fleet Management Agent",
                         "summary": row["fleet_summary"],
-                        "status": "UNKNOWN",
-                        "priority": 1,
+                        "status": row.get("fleet_status", "NORMAL"),
+                        "priority": row.get("fleet_priority", 1),
                     })
                 if row.get("safety_summary"):
                     agent_reports.append({
                         "agent": "Safety K3 Agent",
                         "summary": row["safety_summary"],
-                        "status": "UNKNOWN",
-                        "priority": 1,
+                        "status": row.get("safety_status", "NORMAL"),
+                        "priority": row.get("safety_priority", 1),
                     })
                 if row.get("emission_summary"):
                     agent_reports.append({
                         "agent": "Emission Agent",
                         "summary": row["emission_summary"],
-                        "status": "UNKNOWN",
-                        "priority": 1,
+                        "status": row.get("emission_status", "NORMAL"),
+                        "priority": row.get("emission_priority", 1),
                     })
                 if row.get("reclamation_summary"):
                     agent_reports.append({
                         "agent": "Reclamation Agent",
                         "summary": row["reclamation_summary"],
-                        "status": "UNKNOWN",
-                        "priority": 1,
+                        "status": row.get("reclamation_status", "NORMAL"),
+                        "priority": row.get("reclamation_priority", 1),
                     })
 
                 return {

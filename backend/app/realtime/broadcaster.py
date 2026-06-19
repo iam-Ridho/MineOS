@@ -180,14 +180,27 @@ async def agent_decision_loop():
                 }).execute()
 
             # 4. Insert ai_decisions
+            fleet_r = next((r for r in reports if "Fleet" in r["agent"]), None)
+            safety_r = next((r for r in reports if "Safety" in r["agent"]), None)
+            emission_r = next((r for r in reports if "Emission" in r["agent"]), None)
+            reclamation_r = next((r for r in reports if "Reclamation" in r["agent"]), None)
+
             supabase_admin.table("ai_decisions").insert({
                 "decision_text": decision["decision_text"],
                 "priority_level": decision["priority_level"],
                 "triggered_agents": [r["agent"] for r in reports if r["priority"] >= 3],
-                "fleet_summary": next((r["summary"] for r in reports if "Fleet" in r["agent"]), ""),
-                "safety_summary": next((r["summary"] for r in reports if "Safety" in r["agent"]), ""),
-                "emission_summary": next((r["summary"] for r in reports if "Emission" in r["agent"]), ""),
-                "reclamation_summary": next((r["summary"] for r in reports if "Reclamation" in r["agent"]), ""),
+                "fleet_summary": fleet_r["summary"] if fleet_r else "",
+                "fleet_status": fleet_r["status"] if fleet_r else "NORMAL",
+                "fleet_priority": fleet_r["priority"] if fleet_r else 1,
+                "safety_summary": safety_r["summary"] if safety_r else "",
+                "safety_status": safety_r["status"] if safety_r else "NORMAL",
+                "safety_priority": safety_r["priority"] if safety_r else 1,
+                "emission_summary": emission_r["summary"] if emission_r else "",
+                "emission_status": emission_r["status"] if emission_r else "NORMAL",
+                "emission_priority": emission_r["priority"] if emission_r else 1,
+                "reclamation_summary": reclamation_r["summary"] if reclamation_r else "",
+                "reclamation_status": reclamation_r["status"] if reclamation_r else "NORMAL",
+                "reclamation_priority": reclamation_r["priority"] if reclamation_r else 1,
                 "scenario": scenario,
                 "llm_engine": decision.get("engine", "gemini-3.5-flash"),
             }).execute()
