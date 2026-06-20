@@ -66,9 +66,9 @@ interface ProductionSnapshot {
 
 interface EmissionLog {
   id: number;
-  asset_id: string;
-  co2_kg_per_trip: number;
-  recorded_at: string;
+  vehicle_id: string;
+  co2_kg: number;
+  timestamp: string;
 }
 
 interface SummaryStats {
@@ -261,8 +261,8 @@ async function fetchEmissionLogs(): Promise<EmissionLog[]> {
   try {
     const { data, error } = await supabase
       .from("emission_logs")
-      .select("id, asset_id, co2_kg_per_trip, recorded_at")
-      .order("recorded_at", { ascending: false })
+      .select('id, vehicle_id, co2_kg, timestamp')
+      .order("timestamp", { ascending: false })
       .limit(10);
 
     if (!error && data && data.length > 0) return data;
@@ -288,19 +288,19 @@ async function fetchEmissionLogs(): Promise<EmissionLog[]> {
         emissionsMap[name] = co2;
       });
 
-      return Object.entries(emissionsMap).map(([asset_id, co2], idx) => ({
+      return Object.entries(emissionsMap).map(([vehicle_id, co2], idx) => ({
         id: idx,
-        asset_id,
-        co2_kg_per_trip: Number(co2.toFixed(1)),
-        recorded_at: new Date().toISOString(),
+        vehicle_id,
+        co2_kg: Number(co2.toFixed(1)),
+        timestamp: new Date().toISOString(),
       }));
     }
   } catch { /* no-op */ }
 
   return [
-    { id: 1, asset_id: "Unit Hauler 42", co2_kg_per_trip: Number((18 + Math.random() * 6).toFixed(1)), recorded_at: new Date().toISOString() },
-    { id: 2, asset_id: "Unit Hauler 09", co2_kg_per_trip: Number((24 + Math.random() * 6).toFixed(1)), recorded_at: new Date().toISOString() },
-    { id: 3, asset_id: "Unit Hauler 17", co2_kg_per_trip: Number((19 + Math.random() * 6).toFixed(1)), recorded_at: new Date().toISOString() },
+    { id: 1, vehicle_id: "Unit Hauler 42", co2_kg: Number((18 + Math.random() * 6).toFixed(1)), timestamp: new Date().toISOString() },
+    { id: 2, vehicle_id: "Unit Hauler 09", co2_kg: Number((24 + Math.random() * 6).toFixed(1)), timestamp: new Date().toISOString() },
+    { id: 3, vehicle_id: "Unit Hauler 17", co2_kg: Number((19 + Math.random() * 6).toFixed(1)), timestamp: new Date().toISOString() },
   ];
 }
 
@@ -400,9 +400,9 @@ const FALLBACK_PRODUCTION: ProductionSnapshot[] = [
 ];
 
 const FALLBACK_EMISSIONS: EmissionLog[] = [
-  { id: 1, asset_id: "Unit Hauler 42", co2_kg_per_trip: 18.2, recorded_at: "" },
-  { id: 2, asset_id: "Unit Hauler 09", co2_kg_per_trip: 26.4, recorded_at: "" },
-  { id: 3, asset_id: "Unit Hauler 17", co2_kg_per_trip: 19.1, recorded_at: "" },
+  { id: 1, vehicle_id: "Unit Hauler 42", co2_kg: 18.2, timestamp: "" },
+  { id: 2, vehicle_id: "Unit Hauler 09", co2_kg: 26.4, timestamp: "" },
+  { id: 3, vehicle_id: "Unit Hauler 17", co2_kg: 19.1, timestamp: "" },
 ];
 
 const FALLBACK_SUMMARY: SummaryStats = {
@@ -613,20 +613,20 @@ export default function AnalyticsPage() {
 
   const uniqueEmissions = Object.values(
     emissions.reduce<Record<string, EmissionLog>>((acc, e) => {
-      if (!acc[e.asset_id]) acc[e.asset_id] = e;
+      if (!acc[e.vehicle_id]) acc[e.vehicle_id] = e;
       return acc;
     }, {}),
   ).slice(0, 5);
 
   const avgCO2 =
     uniqueEmissions.length > 0
-      ? (uniqueEmissions.reduce((s, e) => s + e.co2_kg_per_trip, 0) / uniqueEmissions.length).toFixed(1)
+      ? (uniqueEmissions.reduce((s, e) => s + e.co2_kg, 0) / uniqueEmissions.length).toFixed(1)
       : "—";
 
   const exportToCSV = () => {
     let csv = "data:text/csv;charset=utf-8,Tipe,Tanggal/Aset,Ton Aktual,Ton Target\n";
     production.forEach((r) => { csv += `Produksi,${r.day_label},${r.actual_tons},${r.target_tons}\n`; });
-    emissions.forEach((r)  => { csv += `Emisi,${r.asset_id},${r.co2_kg_per_trip},N/A\n`; });
+    emissions.forEach((r)  => { csv += `Emisi,${r.vehicle_id},${r.co2_kg},N/A\n`; });
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csv));
     link.setAttribute("download", `analitik_${new Date().toISOString().split("T")[0]}.csv`);
@@ -924,15 +924,15 @@ export default function AnalyticsPage() {
             </div>
             <div className="space-y-2">
               {uniqueEmissions.map((u) => {
-                const isHigh = u.co2_kg_per_trip > 23;
+                const isHigh = u.co2_kg > 23;
                 return (
                   <div key={u.id} className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50">
                     <div className="flex items-center gap-2.5">
                       <span className={`w-2 h-2 rounded-full ${isHigh ? "bg-amber-400" : "bg-emerald-400"}`} />
-                      <span className="text-xs text-slate-600 font-medium">{u.asset_id}</span>
+                      <span className="text-xs text-slate-600 font-medium">{u.vehicle_id}</span>
                     </div>
                     <span className={`text-xs font-bold tabular-nums ${isHigh ? "text-amber-600" : "text-emerald-600"}`}>
-                      {u.co2_kg_per_trip.toFixed(1)} kg/perjalanan
+                      {u.co2_kg.toFixed(1)} kg/perjalanan
                     </span>
                   </div>
                 );
