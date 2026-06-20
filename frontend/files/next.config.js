@@ -23,6 +23,26 @@ const nextConfig = {
         source: '/api/health',
         destination: 'https://judo-flashback-devotion.ngrok-free.dev/health',
       },
+      {
+        source: '/api/llm/:path*',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/llm/:path*',
+      },
+      {
+        source: '/api/alerts/:path*',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/alerts/:path*',
+      },
+      {
+        source: '/api/analytics/:path*',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/analytics/:path*',
+      },
+      {
+        source: '/api/chat',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/chat',
+      },
+      {
+        source: '/api/scenario/:path*',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/scenario/:path*',
+      },
     ];
   },
 
