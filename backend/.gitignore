@@ -1,0 +1,64 @@
+# ===========================
+# SECRETS & CREDENTIALS
+# ===========================
+.env
+.env.*
+!.env.example
+firebase-credentials.json
+*-credentials.json
+*-service-account.json
+google-credentials.json
+
+# ===========================
+# PYTHON
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.pyo
+
+# ===========================
+# VIRTUAL ENVIRONMENT
+# ===========================
+venv/
+.venv/
+env/
+.env.bak
+
+# ===========================
+# TESTING
+# ===========================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+*.cover
+
+# ===========================
+# IDE / EDITOR
+# ===========================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===========================
+# LOGS
+# ===========================
+*.log
+logs/
+
+# ===========================
+# MISC
+# ===========================
+Note*.txt
+*.tmp

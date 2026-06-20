@@ -1,0 +1,182 @@
+{
+  "timestamp": "2026-06-12T15:40:29.800839",
+  "base_url": "http://10.10.14.40:8000",
+  "summary": {
+    "total": 22,
+    "passed": 21,
+    "failed": 1,
+    "pass_rate": 95.45454545454545
+  },
+  "results": [
+    {
+      "time": "15:39:55",
+      "status": "PASS",
+      "message": "Server running: {'status': 'ok', 'service': 'MineOS', 'llm': 'Multi-Provider', 'version': '1.0.0'}"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Total vehicles: 12"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Source: supabase:vehicle_positions"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Active: 12/12"
+    },
+    {
+      "time": "15:40:04",
+      "status": "INFO",
+      "message": "Scenario: normal"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Vehicle fields complete: ['vehicle_id', 'latitude', 'longitude', 'speed_kmh', 'heading_deg']"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Total positions: 12"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Source: supabase:emission_logs"
+    },
+    {
+      "time": "15:40:04",
+      "status": "WARN",
+      "message": "CO2: 9.503t EXCEEDS 3.5t limit!"
+    },
+    {
+      "time": "15:40:04",
+      "status": "INFO",
+      "message": "Vehicle count: 12"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Source: supabase:production_snapshots"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "OEE: 100.0%"
+    },
+    {
+      "time": "15:40:04",
+      "status": "WARN",
+      "message": "Production: 1296858.0 ton (unexpected range)"
+    },
+    {
+      "time": "15:40:04",
+      "status": "INFO",
+      "message": "Active alerts: 50"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Alert structure valid: WASPADA"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Scenario 'normal' set successfully"
+    },
+    {
+      "time": "15:40:04",
+      "status": "PASS",
+      "message": "Scenario 'storm' set successfully"
+    },
+    {
+      "time": "15:40:05",
+      "status": "PASS",
+      "message": "Scenario 'fatigue' set successfully"
+    },
+    {
+      "time": "15:40:05",
+      "status": "PASS",
+      "message": "Scenario 'incident' set successfully"
+    },
+    {
+      "time": "15:40:06",
+      "status": "INFO",
+      "message": "Reset to 'normal' scenario"
+    },
+    {
+      "time": "15:40:06",
+      "status": "PASS",
+      "message": "Response time: 0.07s"
+    },
+    {
+      "time": "15:40:06",
+      "status": "PASS",
+      "message": "Agent report found: Fleet Management Agent"
+    },
+    {
+      "time": "15:40:06",
+      "status": "PASS",
+      "message": "Agent report found: Safety K3 Agent"
+    },
+    {
+      "time": "15:40:06",
+      "status": "PASS",
+      "message": "Agent report found: Emission Agent"
+    },
+    {
+      "time": "15:40:06",
+      "status": "PASS",
+      "message": "Agent report found: Reclamation Agent"
+    },
+    {
+      "time": "15:40:06",
+      "status": "PASS",
+      "message": "Decision: WASPADA"
+    },
+    {
+      "time": "15:40:06",
+      "status": "INFO",
+      "message": "LLM Engine: unknown"
+    },
+    {
+      "time": "15:40:12",
+      "status": "WARN",
+      "message": "Q: 'Apa kondisi tambang?...' -> 5.56s (slow) | gemini-3.5-flash"
+    },
+    {
+      "time": "15:40:12",
+      "status": "INFO",
+      "message": "Answer: Kondisi operasional tambang saat ini terpantau NORMAL dengan seluruh 12 unit ken..."
+    },
+    {
+      "time": "15:40:18",
+      "status": "WARN",
+      "message": "Q: 'Berapa kendaraan aktif?...' -> 5.43s (slow) | gemini-3.5-flash"
+    },
+    {
+      "time": "15:40:18",
+      "status": "INFO",
+      "message": "Answer: Saat ini terdapat 12 unit kendaraan yang aktif beroperasi dari total 12 unit arm..."
+    },
+    {
+      "time": "15:40:29",
+      "status": "FAIL",
+      "message": "Timeout: http://10.10.14.40:8000/api/chat"
+    },
+    {
+      "time": "15:40:29",
+      "status": "PASS",
+      "message": "Agents count: 4"
+    },
+    {
+      "time": "15:40:29",
+      "status": "INFO",
+      "message": "Cycle interval: 30s"
+    }
+  ]
+}

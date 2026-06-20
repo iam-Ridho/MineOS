@@ -1,0 +1,1 @@
+export type { FleetAgent } from "@/hooks/useSupabaseAgents";
