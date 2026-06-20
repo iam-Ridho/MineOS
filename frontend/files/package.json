@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
-    "cesium": "^1.141.0",
+    "cesium": "^1.142.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
     "lucide-react": "^0.383.0",
@@ -43,4 +43,3 @@
     }
   }
 }
-

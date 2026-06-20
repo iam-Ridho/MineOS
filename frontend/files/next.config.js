@@ -1,5 +1,4 @@
 const path = require('path');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -40,35 +39,11 @@ const nextConfig = {
   },
 
   env: {
-    NEXT_PUBLIC_CESIUM_BASE_URL: '/cesium',
+    NEXT_PUBLIC_CESIUM_BASE_URL: 'https://cesium.com/downloads/cesiumjs/releases/1.142.0/Build/Cesium',
   },
 
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Copy asset Cesium ke /public/cesium saat build
-      config.plugins.push(
-        new CopyWebpackPlugin({
-          patterns: [
-            {
-              from: path.join(__dirname, 'node_modules/cesium/Build/Cesium/Workers'),
-              to: path.join(__dirname, 'public/cesium/Workers'),
-            },
-            {
-              from: path.join(__dirname, 'node_modules/cesium/Build/Cesium/ThirdParty'),
-              to: path.join(__dirname, 'public/cesium/ThirdParty'),
-            },
-            {
-              from: path.join(__dirname, 'node_modules/cesium/Build/Cesium/Assets'),
-              to: path.join(__dirname, 'public/cesium/Assets'),
-            },
-            {
-              from: path.join(__dirname, 'node_modules/cesium/Build/Cesium/Widgets'),
-              to: path.join(__dirname, 'public/cesium/Widgets'),
-            },
-          ],
-        })
-      );
-
       config.resolve.alias = {
         ...config.resolve.alias,
         cesium: path.resolve(__dirname, 'node_modules/cesium'),

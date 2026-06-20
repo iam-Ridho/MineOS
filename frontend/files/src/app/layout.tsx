@@ -11,6 +11,12 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id">
+      <head>
+        <link
+        rel="stylesheet"
+        href="https://cesium.com/downloads/cesiumjs/releases/1.142.0/Build/Cesium/Widgets/widgets.css"
+        />
+      </head>
       <body>
         <TelemetryProvider>
           <AppLayout>{children}</AppLayout>

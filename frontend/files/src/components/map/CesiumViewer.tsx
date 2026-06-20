@@ -209,13 +209,15 @@ export default function CesiumViewer({ onSelectAgent, selectedAgent, agents = []
       try {
         if (viewerRef.current) return;
 
+        if (typeof window !== "undefined") {
+          (window as any).CESIUM_BASE_URL =
+            "https://cesium.com/downloads/cesiumjs/releases/1.142.0/Build/Cesium";
+        }
         const Cesium = await import("cesium");
-        await import("cesium/Build/Cesium/Widgets/widgets.css");
         if (!mounted) return;
 
         const token = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN || "";
         Cesium.Ion.defaultAccessToken = token;
-        (Cesium as any).buildModuleUrl.setBaseUrl("/cesium/");
 
         const container = containerRef.current;
         if (!container || !mounted) return;

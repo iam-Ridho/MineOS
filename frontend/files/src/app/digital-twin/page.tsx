@@ -370,16 +370,14 @@ function AiDecisionPanel({ decision }: { decision: AiDecision | null }) {
   }
 
   const priorityColor =
-    decision.priority_level === "CRITICAL" ? "text-red-500 border-red-400 bg-red-50" :
-    decision.priority_level === "HIGH"     ? "text-amber-600 border-amber-400 bg-amber-50" :
-    decision.priority_level === "MEDIUM"   ? "text-blue-600 border-blue-400 bg-blue-50" :
-    "text-slate-600 border-slate-300 bg-slate-50";
+  decision.priority_level === "KRITIS"  ? "text-red-500 border-red-400 bg-red-50" :
+  decision.priority_level === "WASPADA" ? "text-amber-600 border-amber-400 bg-amber-50" :
+  "text-slate-600 border-slate-300 bg-slate-50";
 
   const priorityDot =
-    decision.priority_level === "CRITICAL" ? "bg-red-400" :
-    decision.priority_level === "HIGH"     ? "bg-amber-400" :
-    decision.priority_level === "MEDIUM"   ? "bg-blue-400" :
-    "bg-slate-400";
+  decision.priority_level === "KRITIS"  ? "bg-red-400" :
+  decision.priority_level === "WASPADA" ? "bg-amber-400" :
+  "bg-slate-400";
 
   const summaries = [
     { label: "Fleet",       value: decision.fleet_summary },
