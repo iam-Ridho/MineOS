@@ -29,13 +29,13 @@ const nextConfig = {
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Access-Control-Allow-Methods', value: 'GET,POST,PUT,DELETE,OPTIONS' },
-          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' },
+          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization, ngrok-skip-browser-warning' },
         ],
       },
     ];
   },
 
-  // 🛠️ Perbaikan Webpack untuk Mengatasi Eror "Octal escape" & "ChunkLoadError" Cesium
+  // 🛠️ PERBAIKAN WEBPACK CESIUM YANG BENAR & STRUKTURAL
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -48,12 +48,14 @@ const nextConfig = {
       };
     }
 
-    // Menghentikan evaluasi ekspresi kritis yang merusak struktur potongan file (chunks) Cesium
+    // Perbaikan Evaluasi Ekspresi Kritis Cesium (Diletakkan di level objek yang tepat)
     config.module = {
       ...config.module,
-      unknownContextCritical: false,
-      exprContextCritical: false,
     };
+    
+    // Mencegah Webpack memutus chunk muatan Cesium akibat warning internal string evaluasi
+    config.module.unknownContextCritical = false;
+    config.module.exprContextCritical = false;
 
     return config;
   },
