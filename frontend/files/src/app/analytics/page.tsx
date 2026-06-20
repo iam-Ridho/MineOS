@@ -183,22 +183,28 @@ async function fetchProductionSnapshots(
     try {
       let query = supabase
         .from("production_snapshots")
-        .select("id, day_label, actual_tons, target_tons, recorded_at")
-        .order("recorded_at", { ascending: true });
+        // 👇 UBAH KOLOM YANG DI-SELECT MENYESUAIKAN BACKEND/DATABASE
+        .select("id, total_load_ton, snapshot_date") 
+        .order("snapshot_date", { ascending: true });
 
       if (startStr && endStr) {
         query = query
-          .gte("recorded_at", `${startStr}T00:00:00Z`)
-          .lte("recorded_at", `${endStr}T23:59:59Z`);
+          .gte("snapshot_date", startStr) // Format tanggal YYYY-MM-DD
+          .lte("snapshot_date", endStr);
       }
 
-      // PERBAIKAN: minta cukup baris untuk Bulan (30)
       const limitCount = timeFilter === "Day" ? 8 : timeFilter === "Month" ? 30 : 7;
       query = query.limit(limitCount);
 
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        backendData = data.map((r, idx) => ({ ...r, id: idx, actual_tons: clampTons(r.actual_tons) }));
+        backendData = data.map((r, idx) => ({ 
+          id: r.id || idx, 
+          day_label: r.snapshot_date, 
+          actual_tons: clampTons(r.total_load_ton || 0), // Mapping ke actual_tons untuk chart
+          target_tons: targetTons, // Gunakan default 75_000
+          recorded_at: r.snapshot_date 
+        }));
       }
     } catch {
       console.warn("Query production_snapshots gagal – beralih ke vehicle_positions");
@@ -312,13 +318,14 @@ async function fetchWeeklySummary(
   try {
     let query = supabase
       .from("production_snapshots")
-      .select("actual_tons, target_tons, recorded_at")
-      .order("recorded_at", { ascending: false });
+      // 👇 UBAH KOLOM DI SINI JUGA
+      .select("total_load_ton, snapshot_date")
+      .order("snapshot_date", { ascending: false });
 
     if (startStr && endStr) {
       query = query
-        .gte("recorded_at", `${startStr}T00:00:00Z`)
-        .lte("recorded_at", `${endStr}T23:59:59Z`);
+        .gte("snapshot_date", startStr)
+        .lte("snapshot_date", endStr);
     }
 
     const limitCount = timeFilter === "Day" ? 8 : timeFilter === "Month" ? 30 : 7;
@@ -326,10 +333,13 @@ async function fetchWeeklySummary(
 
     const { data, error } = await query;
     if (!error && data && data.length > 0) {
-      const total = data.reduce((s, r) => s + clampTons(r.actual_tons ?? 0), 0);
+      // Hitung total dari total_load_ton
+      const total = data.reduce((s, r) => s + clampTons(r.total_load_ton ?? 0), 0);
       const avg = total / data.length;
+      
+      // Karena target_tons tidak ada di database, asumsikan default target 75_000 ton
       const efficiencies = data.map((r) =>
-        r.target_tons > 0 ? (clampTons(r.actual_tons) / r.target_tons) * 100 : 0,
+        75_000 > 0 ? (clampTons(r.total_load_ton ?? 0) / 75_000) * 100 : 0,
       );
       const avgEff = efficiencies.reduce((s, v) => s + v, 0) / efficiencies.length;
 
