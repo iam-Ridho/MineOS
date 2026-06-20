@@ -34,6 +34,29 @@ const nextConfig = {
       },
     ];
   },
+
+  // 🛠️ Perbaikan Webpack untuk Mengatasi Eror "Octal escape" & "ChunkLoadError" Cesium
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        http: false,
+        https: false,
+        zlib: false,
+        url: false,
+      };
+    }
+
+    // Menghentikan evaluasi ekspresi kritis yang merusak struktur potongan file (chunks) Cesium
+    config.module = {
+      ...config.module,
+      unknownContextCritical: false,
+      exprContextCritical: false,
+    };
+
+    return config;
+  },
 };
 
 module.exports = nextConfig;
