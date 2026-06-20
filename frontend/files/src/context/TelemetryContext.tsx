@@ -37,7 +37,7 @@ const TelemetryContext = createContext<TelemetryContextProps | undefined>(undefi
 
 // Backend WebSocket Anda (FastAPI) — bukan Next.js dev server (localhost:3000)
 const TELEMETRY_WS_URL =
-  process.env.NEXT_PUBLIC_TELEMETRY_WS_URL || "ws://localhost:8000/ws/telemetry";
+  process.env.NEXT_PUBLIC_TELEMETRY_WS_URL || "wss://localhost:8000/ws/telemetry";
 
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [emergencyStop, setEmergencyStop] = useState<boolean>(false);
