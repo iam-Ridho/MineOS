@@ -5,7 +5,8 @@ import { supabase } from "@/lib/supabaseClient";
 
 // ─── API Base ────────────────────────────────────────────────
 const BACKEND_DIRECT = process.env.NEXT_PUBLIC_BACKEND_URL || "https://judo-flashback-devotion.ngrok-free.dev";
-const API_BASE = "/api";
+// Keep API_BASE empty to avoid double '/api' when endpoints already include '/api'
+const API_BASE = "";
 
 // ─── Config ──────────────────────────────────────────────────
 const TIMEOUT_MS = 15000;
