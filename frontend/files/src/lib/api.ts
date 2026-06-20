@@ -3,7 +3,7 @@
  * Base URL: http://[IP_LAPTOP_KAMU]:8000
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const API_BASE_URL = "https://judo-flashback-devotion.ngrok-free.dev";
 
 // ==========================================
 // Type Definitions
