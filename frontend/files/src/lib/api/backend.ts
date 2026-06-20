@@ -4,8 +4,8 @@
 import { supabase } from "@/lib/supabaseClient";
 
 // ─── API Base ────────────────────────────────────────────────
-const BACKEND_DIRECT = process.env.NEXT_PUBLIC_BACKEND_URL || "http://10.10.14.40:8000";
-const API_BASE = "";
+const BACKEND_DIRECT = process.env.NEXT_PUBLIC_BACKEND_URL || "https://judo-flashback-devotion.ngrok-free.dev";
+const API_BASE = "/api";
 
 // ─── Config ──────────────────────────────────────────────────
 const TIMEOUT_MS = 15000;
@@ -93,9 +93,17 @@ async function fetchWithTimeout(
     controller.abort();
   }, timeoutMs);
 
+  // Tambahkan header ngrok agar tidak terhadang halaman peringatan free account
+  const headers = {
+    ...options.headers,
+    "ngrok-skip-browser-warning": "true",
+    "User-Agent": "custom-agent-mine-os"
+  };
+
   try {
     const response = await fetch(url, {
       ...options,
+      headers, // <-- Masukkan header yang baru di sini
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
