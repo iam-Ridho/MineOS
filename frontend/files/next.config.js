@@ -2,22 +2,21 @@
 const nextConfig = {
   async rewrites() {
     return [
-      // Proxy ke Backend Ridho (10.100.148.67:8000)
       {
         source: '/api/agents/:path*',
-        destination: 'http://10.100.148.67:8000/api/agents/:path*',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/agents/:path*',
       },
       {
         source: '/api/vehicles/:path*',
-        destination: 'http://10.100.148.67:8000/api/vehicles/:path*',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/vehicles/:path*',
       },
       {
         source: '/api/emissions/:path*',
-        destination: 'http://10.100.148.67:8000/api/emissions/:path*',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/emissions/:path*',
       },
       {
         source: '/api/health',
-        destination: 'http://10.100.148.67:8000/health',
+        destination: 'https://judo-flashback-devotion.ngrok-free.dev/health',
       },
     ];
   },
