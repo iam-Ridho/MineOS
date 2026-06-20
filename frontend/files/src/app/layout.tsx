@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link
         rel="stylesheet"
-        href="https://cesium.com/downloads/cesiumjs/releases/1.142.0/Build/Cesium/Widgets/widgets.css"
+        href="/cesium/Widgets/widgets.css"
         />
       </head>
       <body>

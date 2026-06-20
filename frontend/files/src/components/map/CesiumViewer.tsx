@@ -211,7 +211,7 @@ export default function CesiumViewer({ onSelectAgent, selectedAgent, agents = []
 
         if (typeof window !== "undefined") {
           (window as any).CESIUM_BASE_URL =
-            "https://cesium.com/downloads/cesiumjs/releases/1.142.0/Build/Cesium";
+            "/cesium";
         }
         const Cesium = await import("cesium");
         if (!mounted) return;
