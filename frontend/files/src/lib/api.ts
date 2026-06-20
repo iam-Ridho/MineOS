@@ -132,6 +132,7 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '69420'
       },
     });
     return handleResponse(response);
@@ -147,6 +148,7 @@ export async function apiPost<T>(endpoint: string, data?: any): Promise<T> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '69420'
       },
       body: JSON.stringify(data || {}),
     });
@@ -163,6 +165,7 @@ export async function apiPut<T>(endpoint: string, data: any): Promise<T> {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '69420'
       },
       body: JSON.stringify(data),
     });
@@ -179,6 +182,7 @@ export async function apiDelete<T>(endpoint: string): Promise<T> {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '69420'
       },
     });
     return handleResponse(response);
