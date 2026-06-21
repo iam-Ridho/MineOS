@@ -62,3 +62,8 @@ logs/
 # ===========================
 Note*.txt
 *.tmp
+
+**/*.exe
+ngrok.exe
+
+**/**/temp_chunk.js
