@@ -9,39 +9,39 @@ const nextConfig = {
     return [
       {
         source: '/api/agents/:path*',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/agents/:path*',
+        destination: 'https://mine-os-3slq.vercel.app/api/agents/:path*',
       },
       {
         source: '/api/vehicles/:path*',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/vehicles/:path*',
+        destination: 'https://mine-os-3slq.vercel.app/api/vehicles/:path*',
       },
       {
         source: '/api/emissions/:path*',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/emissions/:path*',
+        destination: 'https://mine-os-3slq.vercel.app/api/emissions/:path*',
       },
       {
         source: '/api/health',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/health',
+        destination: 'https://mine-os-3slq.vercel.app/health',
       },
       {
         source: '/api/llm/:path*',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/llm/:path*',
+        destination: 'https://mine-os-3slq.vercel.app/api/llm/:path*',
       },
       {
         source: '/api/alerts/:path*',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/alerts/:path*',
+        destination: 'https://mine-os-3slq.vercel.app/api/alerts/:path*',
       },
       {
         source: '/api/analytics/:path*',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/analytics/:path*',
+        destination: 'https://mine-os-3slq.vercel.app/api/analytics/:path*',
       },
       {
         source: '/api/chat',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/chat',
+        destination: 'https://mine-os-3slq.vercel.app/api/chat',
       },
       {
         source: '/api/scenario/:path*',
-        destination: 'https://judo-flashback-devotion.ngrok-free.dev/api/scenario/:path*',
+        destination: 'https://mine-os-3slq.vercel.app/api/scenario/:path*',
       },
     ];
   },
