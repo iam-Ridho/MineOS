@@ -4,7 +4,7 @@
 import { supabase } from "@/lib/supabaseClient";
 
 // ─── API Base ────────────────────────────────────────────────
-const BACKEND_DIRECT = process.env.NEXT_PUBLIC_BACKEND_URL || "https://judo-flashback-devotion.ngrok-free.dev";
+const BACKEND_DIRECT = process.env.NEXT_PUBLIC_BACKEND_URL || "https://mine-os-3slq.vercel.app";
 // Keep API_BASE empty to avoid double '/api' when endpoints already include '/api'
 const API_BASE = "";
 
