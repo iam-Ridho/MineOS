@@ -3,7 +3,7 @@
  * Base URL: http://[IP_LAPTOP_KAMU]:8000
  */
 
-const API_BASE_URL = "https://judo-flashback-devotion.ngrok-free.dev";
+const API_BASE_URL = "https://mine-os-3slq.vercel.app";
 
 // ==========================================
 // Type Definitions
