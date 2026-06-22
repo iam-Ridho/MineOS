@@ -68,8 +68,8 @@ export function useAlerts() {
           .limit(MAX_ALERTS),
         supabase
           .from("ai_decisions")
-          .select("id, decision_text, priority_level, scenario, triggered_agents, fleet_summary, safety_summary, emission_summary, reclamation_summary, llm_engine, created_at")
-          .order("created_at", { ascending: false })
+          .select("id, decision_text, priority_level, scenario, triggered_agents, fleet_summary, safety_summary, emission_summary, reclamation_summary, llm_engine, timestamp")
+          .order("timestamp", { ascending: false })
           .limit(1)
           .maybeSingle(),
       ]);
